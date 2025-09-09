@@ -1,0 +1,13 @@
+{
+  "name": "pricing-co-pilot",
+  "version": "1.0.0",
+  "description": "Build scripts for the Pricing Co-Pilot extension.",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.2",
+    "typescript": "^5.4.5"
+  }
+}

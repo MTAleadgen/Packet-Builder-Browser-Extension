@@ -1,0 +1,5 @@
+{
+  "name": "Pricing Co-Pilot",
+  "description": "An extension to automate the weekly data gathering process from PriceLabs and Airbnb. It navigates the sites, downloads reports, takes a screenshot, and packages them into a single .zip file.",
+  "requestFramePermissions": []
+}
