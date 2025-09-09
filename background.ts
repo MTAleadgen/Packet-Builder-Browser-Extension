@@ -1,9 +1,18 @@
 import type { Message, WorkflowState, ContentScriptMessage, ContentScriptResponse } from './types';
 import { WorkflowStatus } from './types';
-import JSZip from 'jszip';
 
 // FIX: Use a global declaration for 'chrome' to resolve TypeScript errors when @types/chrome is not available.
 declare const chrome: any;
+declare function importScripts(...urls: string[]): void;
+declare const JSZip: any;
+
+
+try {
+  importScripts('lib/jszip.min.js');
+} catch (e) {
+  console.error("Could not import jszip.min.js", e);
+}
+
 
 let state: WorkflowState = {
     status: WorkflowStatus.IDLE,
