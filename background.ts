@@ -1,17 +1,9 @@
 import type { Message, WorkflowState, ContentScriptMessage, ContentScriptResponse } from './types';
 import { WorkflowStatus } from './types';
+import JSZip from 'jszip';
 
 // FIX: Use a global declaration for 'chrome' to resolve TypeScript errors when @types/chrome is not available.
 declare const chrome: any;
-
-// The JSZip library is loaded into the service worker's global scope.
-// This is the correct way to load external scripts in a Manifest V3 service worker.
-try {
-    importScripts('lib/jszip.min.js');
-} catch (e) {
-    console.error('Could not import jszip.min.js', e);
-}
-declare var JSZip: any;
 
 let state: WorkflowState = {
     status: WorkflowStatus.IDLE,
