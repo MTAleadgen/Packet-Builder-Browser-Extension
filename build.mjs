@@ -1,5 +1,7 @@
 import { build } from 'esbuild';
+
 import { rm, mkdir, cp, readFile, writeFile } from 'fs/promises';
+
 import path from 'path';
 
 const outDir = path.resolve('dist');
@@ -21,6 +23,7 @@ async function copyStatic() {
   await cp('icons', path.join(outDir, 'icons'), { recursive: true });
 
   // Sanitize JSZip to avoid octal escape sequences that break in strict mode
+
   // Only convert actual octal escapes to their hexadecimal form so the rest of
   // the bundled code remains intact.
   await mkdir(path.join(outDir, 'lib'), { recursive: true });
@@ -33,6 +36,7 @@ async function copyStatic() {
       '\\x' + parseInt(oct, 8).toString(16).padStart(2, '0'),
     );
   await writeFile(path.join(outDir, 'lib', 'jszip.min.js'), sanitized);
+
 }
 
 async function buildScripts() {
