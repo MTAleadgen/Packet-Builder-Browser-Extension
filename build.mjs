@@ -1,5 +1,7 @@
 import { build } from 'esbuild';
+
 import { rm, mkdir, cp, readFile, writeFile } from 'fs/promises';
+
 import path from 'path';
 
 const outDir = path.resolve('dist');
@@ -10,7 +12,9 @@ async function clean() {
 }
 
 async function copyStatic() {
+
   const files = ['manifest.json', 'popup.html', 'index.html', 'metadata.json', 'import-map.json'];
+
   for (const file of files) {
     try {
       await cp(file, path.join(outDir, file));
