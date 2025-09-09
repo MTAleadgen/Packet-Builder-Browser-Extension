@@ -1,5 +1,7 @@
 import { build } from 'esbuild';
+
 import { rm, mkdir, cp } from 'fs/promises';
+
 import path from 'path';
 
 const outDir = path.resolve('dist');
@@ -19,6 +21,7 @@ async function copyStatic() {
     }
   }
   await cp('icons', path.join(outDir, 'icons'), { recursive: true });
+
 }
 
 async function buildScripts() {
