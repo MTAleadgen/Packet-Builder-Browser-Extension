@@ -12,7 +12,9 @@ async function clean() {
 }
 
 async function copyStatic() {
-  const files = ['manifest.json', 'popup.html', 'index.html', 'metadata.json'];
+
+  const files = ['manifest.json', 'popup.html', 'index.html', 'metadata.json', 'import-map.json'];
+
   for (const file of files) {
     try {
       await cp(file, path.join(outDir, file));
@@ -33,7 +35,6 @@ async function copyStatic() {
   } catch (err) {
     console.warn('Skipping JSZip sanitization:', err.message);
   }
-
 }
 
 async function buildScripts() {
