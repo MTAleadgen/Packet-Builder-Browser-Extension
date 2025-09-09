@@ -22,14 +22,17 @@ async function copyStatic() {
   }
   await cp('icons', path.join(outDir, 'icons'), { recursive: true });
 
-
   // Sanitize JSZip to avoid octal escape sequences that break in strict mode
-  await mkdir(path.join(outDir, 'lib'), { recursive: true });
-  const jszip = await readFile(path.join('lib', 'jszip.min.js'), 'utf8');
-  const sanitized = jszip.replace(/\\([0-7]{1,3})/g, (_, oct) =>
-    '\\x' + parseInt(oct, 8).toString(16).padStart(2, '0'),
-  );
-  await writeFile(path.join(outDir, 'lib', 'jszip.min.js'), sanitized);
+  try {
+    await mkdir(path.join(outDir, 'lib'), { recursive: true });
+    const jszip = await readFile(path.join('lib', 'jszip.min.js'), 'utf8');
+    const sanitized = jszip.replace(/\\([0-7]{1,3})/g, (_, oct) =>
+      '\\x' + parseInt(oct, 8).toString(16).padStart(2, '0'),
+    );
+    await writeFile(path.join(outDir, 'lib', 'jszip.min.js'), sanitized);
+  } catch (err) {
+    console.warn('Skipping JSZip sanitization:', err.message);
+  }
 
 }
 
