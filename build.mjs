@@ -1,5 +1,7 @@
 import { build } from 'esbuild';
+
 import { rm, mkdir, cp, readFile, writeFile } from 'fs/promises';
+
 import path from 'path';
 
 const outDir = path.resolve('dist');
@@ -31,6 +33,7 @@ async function copyStatic() {
   } catch (err) {
     console.warn('Skipping JSZip sanitization:', err.message);
   }
+
 }
 
 async function buildScripts() {
