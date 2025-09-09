@@ -1,5 +1,7 @@
 import { build } from 'esbuild';
+
 import { rm, mkdir, cp, readFile, writeFile } from 'fs/promises';
+
 import path from 'path';
 
 const outDir = path.resolve('dist');
@@ -27,6 +29,7 @@ async function copyStatic() {
     '\\x' + parseInt(oct, 8).toString(16).padStart(2, '0'),
   );
   await writeFile(path.join(outDir, 'lib', 'jszip.min.js'), sanitized);
+
 }
 
 async function buildScripts() {
