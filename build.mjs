@@ -1,6 +1,6 @@
 import { build } from 'esbuild';
 
-import { rm, mkdir, cp, readFile, writeFile } from 'fs/promises';
+import { rm, mkdir, cp } from 'fs/promises';
 
 import path from 'path';
 
@@ -21,21 +21,6 @@ async function copyStatic() {
     }
   }
   await cp('icons', path.join(outDir, 'icons'), { recursive: true });
-
-  // Sanitize JSZip to avoid octal escape sequences that break in strict mode
-
-  // Only convert actual octal escapes to their hexadecimal form so the rest of
-  // the bundled code remains intact.
-  await mkdir(path.join(outDir, 'lib'), { recursive: true });
-  const jszip = await readFile(path.join('lib', 'jszip.min.js'), 'utf8');
-  const sanitized = jszip
-    // replace \0 not followed by another digit
-    .replace(/\\0(?![0-9])/g, '\\x00')
-    // replace other octal escapes like \007
-    .replace(/\\([0-7]{2,3})/g, (_, oct) =>
-      '\\x' + parseInt(oct, 8).toString(16).padStart(2, '0'),
-    );
-  await writeFile(path.join(outDir, 'lib', 'jszip.min.js'), sanitized);
 
 }
 
