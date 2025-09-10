@@ -109,10 +109,10 @@ async function startWorkflow() {
         );
 
         console.log('Verified base price after update:', verify.price);
-
         if (verify.price !== newPrice) {
             throw new Error(`Base price did not update to ${newPrice}, found ${verify.price}`);
         }
+
 
         // IMPORTANT: The following selectors are placeholders for PriceLabs except for the save/refresh action.
         const LOADING_OVERLAY_SELECTOR = 'div[data-testid="loading-spinner-overlay"]';
