@@ -5,7 +5,7 @@ let state: WorkflowState = {
     status: WorkflowStatus.IDLE,
     message: 'Ready to start.',
     step: 1,
-    totalSteps: 33
+    totalSteps: 31
 };
 
 let originalTabId: number;
@@ -293,24 +293,29 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
             console.log('⏳ Waiting for Airbnb page to load and stabilize...');
             await new Promise(resolve => setTimeout(resolve, 8000)); // Increased wait for page transition
 
-            // Step 25: Click Price Tips button
-            await updateState({ step: 25, message: 'Airbnb Step 1: Clicking Price Tips button...' });
+            // Step 22: Click Price Tips button
+            await updateState({ step: 22, message: 'Airbnb Step 1: Clicking Price Tips button...' });
             console.log('🎯 Executing Price Tips button click...');
 
             try {
                 await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
                 console.log('✅ Price Tips button clicked successfully');
 
-                // Step 26: Extract price tips data
-                await updateState({ step: 26, message: 'Airbnb Step 2: Extracting price tips data...' });
+                // Step 23: Scroll calendar to load all months
+                await updateState({ step: 23, message: 'Airbnb Step 2: Scrolling calendar to load all months...' });
+                console.log('📜 Scrolling calendar to load all months...');
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Brief pause
+
+                // Step 24: Extract price tips data
+                await updateState({ step: 24, message: 'Airbnb Step 3: Extracting price tips data...' });
                 console.log('📊 Extracting price tips data...');
 
                 const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
                 const priceData = extractionResult.data || [];
                 console.log(`✅ Extracted ${priceData.length} price tip entries`);
 
-                // Step 27: Export to CSV
-                await updateState({ step: 27, message: 'Airbnb Step 3: Exporting price tips to CSV...' });
+                // Step 25: Export to CSV
+                await updateState({ step: 25, message: 'Airbnb Step 4: Exporting price tips to CSV...' });
                 console.log('📄 Exporting price tips to CSV...');
 
                 await sendMessageToTab(originalTabId, {
@@ -329,7 +334,7 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
             // Final success
             await updateState({
                 status: WorkflowStatus.SUCCESS,
-                message: `Full workflow completed successfully! PDF downloaded, navigated to Airbnb (same tab), and price tips extracted.`,
+                message: `Full workflow completed successfully! PDF downloaded, navigated to Airbnb (same tab), scrolled calendar, and price tips extracted.`,
             });
                         await clearWorkflowState();
                         return;
@@ -418,24 +423,29 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
             console.log('⏳ Waiting for Airbnb page to load and stabilize...');
             await new Promise(resolve => setTimeout(resolve, 8000)); // Increased wait for page transition
 
-            // Step 25: Click Price Tips button
-            await updateState({ step: 25, message: 'Airbnb Step 1: Clicking Price Tips button...' });
+            // Step 22: Click Price Tips button
+            await updateState({ step: 22, message: 'Airbnb Step 1: Clicking Price Tips button...' });
             console.log('🎯 Executing Price Tips button click...');
 
             try {
                 await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
                 console.log('✅ Price Tips button clicked successfully');
 
-                // Step 26: Extract price tips data
-                await updateState({ step: 26, message: 'Airbnb Step 2: Extracting price tips data...' });
+                // Step 23: Scroll calendar to load all months
+                await updateState({ step: 23, message: 'Airbnb Step 2: Scrolling calendar to load all months...' });
+                console.log('📜 Scrolling calendar to load all months...');
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Brief pause
+
+                // Step 24: Extract price tips data
+                await updateState({ step: 24, message: 'Airbnb Step 3: Extracting price tips data...' });
                 console.log('📊 Extracting price tips data...');
 
                 const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
                 const priceData = extractionResult.data || [];
                 console.log(`✅ Extracted ${priceData.length} price tip entries`);
 
-                // Step 27: Export to CSV
-                await updateState({ step: 27, message: 'Airbnb Step 3: Exporting price tips to CSV...' });
+                // Step 25: Export to CSV
+                await updateState({ step: 25, message: 'Airbnb Step 4: Exporting price tips to CSV...' });
                 console.log('📄 Exporting price tips to CSV...');
 
                 await sendMessageToTab(originalTabId, {
@@ -504,9 +514,9 @@ async function resumeMarketResearchWorkflow(startStep: number) {
         await waitForTabLoad(originalTabId!);
         await new Promise(res => setTimeout(res, 3000)); // Wait for page to settle
         
-        // Step 21: Click Show Dashboard (conditionally skip if starting later)
-        if (startStep <= 21) {
-            updateState({ step: 21, message: 'Market Research Step 4: Clicking Show Dashboard...' });
+        // Step 18: Click Show Dashboard (conditionally skip if starting later)
+        if (startStep <= 18) {
+            updateState({ step: 18, message: 'Market Research Step 4: Clicking Show Dashboard...' });
             try {
                 await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD' });
             } catch (e) {
@@ -518,21 +528,21 @@ async function resumeMarketResearchWorkflow(startStep: number) {
             }
         }
         
-        // Step 22: Complete Show Dashboard workflow (with 12s wait)
-        if (startStep <= 22) {
-            updateState({ step: 22, message: 'Market Research Step 5: Waiting 12 seconds before PDF download...' });
+        // Step 19: Complete Show Dashboard workflow (with 12s wait)
+        if (startStep <= 19) {
+            updateState({ step: 19, message: 'Market Research Step 5: Waiting 12 seconds before PDF download...' });
             await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_5_COMPLETE' });
         }
-        
-        // Step 23: Download as PDF (with 15s wait)
-        if (startStep <= 23) {
-            updateState({ step: 23, message: 'Market Research Step 6: Downloading as PDF...' });
+
+        // Step 20: Download as PDF (with 15s wait)
+        if (startStep <= 20) {
+            updateState({ step: 20, message: 'Market Research Step 6: Downloading as PDF...' });
             await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_6_DOWNLOAD_PDF' });
         }
-        
-        // Step 24: Complete PDF download workflow
-        if (startStep <= 24) {
-            updateState({ step: 24, message: 'Market Research Step 7: Completing PDF download...' });
+
+        // Step 21: Complete PDF download workflow
+        if (startStep <= 21) {
+            updateState({ step: 21, message: 'Market Research Step 7: Completing PDF download...' });
             await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_7_COMPLETE' });
             console.log('✅ Step 24 completed - waiting extra 10 seconds for download to complete');
             await new Promise(resolve => setTimeout(resolve, 10000)); // Increased to 10 seconds for download
@@ -547,20 +557,24 @@ async function resumeMarketResearchWorkflow(startStep: number) {
             console.log('⏳ Waiting for Airbnb page to load and stabilize...');
             await new Promise(resolve => setTimeout(resolve, 8000)); // Increased wait for page transition
 
-            // Step 25: Click Price Tips button
-            updateState({ step: 25, message: 'Airbnb Step 1: Clicking Price Tips button...' });
+            // Step 22: Click Price Tips button
+            updateState({ step: 22, message: 'Airbnb Step 1: Clicking Price Tips button...' });
 
             try {
                 await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
 
-                // Step 26: Extract price tips data
-                updateState({ step: 26, message: 'Airbnb Step 2: Extracting price tips data...' });
+                // Step 23: Scroll calendar to load all months
+                updateState({ step: 23, message: 'Airbnb Step 2: Scrolling calendar to load all months...' });
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Brief pause
+
+                // Step 24: Extract price tips data
+                updateState({ step: 24, message: 'Airbnb Step 3: Extracting price tips data...' });
 
                 const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
                 const priceData = extractionResult.data || [];
 
-                // Step 27: Export to CSV
-                updateState({ step: 27, message: 'Airbnb Step 3: Exporting price tips to CSV...' });
+                // Step 25: Export to CSV
+                updateState({ step: 25, message: 'Airbnb Step 4: Exporting price tips to CSV...' });
 
                 await sendMessageToTab(originalTabId, {
                     type: 'EXPORT_PRICE_TIPS_CSV',
@@ -578,7 +592,7 @@ async function resumeMarketResearchWorkflow(startStep: number) {
         // --- Success ---
         updateState({
             status: WorkflowStatus.SUCCESS,
-            message: `Market Research workflow completed successfully! PDF downloaded, navigated to Airbnb, and price tips extracted.`,
+            message: `Market Research workflow completed successfully! PDF downloaded, navigated to Airbnb, scrolled calendar, and price tips extracted.`,
         });
         await clearWorkflowState();
 
@@ -642,18 +656,35 @@ async function sendMessageToTab<T extends ContentScriptResponse>(tabId: number, 
 
 async function injectScript(tabId: number): Promise<void> {
     return new Promise((resolve, reject) => {
+        // First inject JSZip library
+        chrome.scripting.executeScript(
+            {
+                target: { tabId: tabId },
+                files: ['lib/jszip.min.js'],
+            },
+            (jszipResults) => {
+                if (chrome.runtime.lastError) {
+                    console.warn('JSZip injection warning:', chrome.runtime.lastError.message);
+                    // Continue anyway - not critical for basic functionality
+                } else {
+                    console.log('JSZip library injected successfully');
+                }
+
+                // Then inject content script
         chrome.scripting.executeScript(
             {
                 target: { tabId: tabId },
                 files: ['content.js'],
             },
-            (results) => {
-                if (chrome.runtime.lastError) {
-                    reject(new Error(`Failed to inject content script: ${chrome.runtime.lastError.message}`));
-                } else {
-                    console.log('Content script injected successfully');
+                    (contentResults) => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(`Failed to inject content script: ${chrome.runtime.lastError.message}`));
+                        } else {
+                            console.log('Content script injected successfully');
                 resolve();
-                }
+                        }
+                    }
+                );
             }
         );
     });
@@ -894,12 +925,49 @@ async function proceedAfterInitialSteps() {
     await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_1_DYNAMIC_PRICING' });
     await new Promise(res => setTimeout(res, 3000));
 
-    // Continue with Market Research workflow steps 10-20
-    await updateState({ step: 10, message: 'Step 10: Clicking Market Research dropdown...' });
+    // Step 10: Navigate to Customizations page
+    await updateState({ step: 10, message: 'Step 10: Navigating to Customizations page...' });
+    await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_2_CUSTOMIZATIONS' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    // Wait for navigation to customizations page
+    await new Promise(res => setTimeout(res, 5000));
+
+    // Re-inject content script after navigation
+    console.log('🔄 Re-injecting content script after Customizations navigation...');
+    await injectScript(originalTabId);
+    await waitForTabLoad(originalTabId);
+
+    // Additional wait for React components to initialize
+    console.log('🔄 Waiting for Customizations React components to initialize...');
+    await new Promise(res => setTimeout(res, 5000));
+
+    // Step 11: Select Listings tab
+    await updateState({ step: 11, message: 'Customizations Step 1: Selecting Listings tab...' });
+    await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_1_LISTINGS' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    // Step 12: Select Table View
+    await updateState({ step: 12, message: 'Customizations Step 2: Selecting Table View...' });
+    await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_2_TABLE_VIEW' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    // Step 13: Download Customizations
+    await updateState({ step: 13, message: 'Customizations Step 3: Downloading customizations...' });
+    await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_3_DOWNLOAD_ALL' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    // Step 14: Complete customizations
+    await updateState({ step: 14, message: 'Customizations Step 4: Completing customizations...' });
+    await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_4_COMPLETE' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    // Continue with Market Research workflow steps 15-24
+    await updateState({ step: 15, message: 'Step 15: Clicking Market Research dropdown...' });
     await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_1_DROPDOWN' });
     await new Promise(res => setTimeout(res, 3000));
 
-    await updateState({ step: 11, message: 'Step 11: Selecting Market Dashboard (navigation expected)...' });
+    await updateState({ step: 16, message: 'Step 16: Selecting Market Dashboard (navigation expected)...' });
     try {
         await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_2_MARKET_DASHBOARD' });
         console.log('✅ Market Dashboard selection completed without disconnection');
@@ -935,7 +1003,7 @@ async function proceedAfterInitialSteps() {
         }
     }
 
-    await updateState({ step: 12, message: 'Step 12: Completing navigation...' });
+    await updateState({ step: 17, message: 'Step 17: Completing navigation...' });
     await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_3_COMPLETE' });
 
     // Wait for Market Research page navigation (NO FORCED SCRIPT INJECTION)
@@ -943,7 +1011,7 @@ async function proceedAfterInitialSteps() {
     await new Promise(res => setTimeout(res, 5000));
 
     // Continue from Market Research workflow (Show Dashboard and beyond)
-    await resumeMarketResearchWorkflow(21);
+    await resumeMarketResearchWorkflow(18);
 }
 
 async function navigateBackToPriceLabsIfPairStored() {
@@ -973,33 +1041,33 @@ async function reduceBasePriceWorkflow() {
     try {
         console.log('💰 Starting base price reduction workflow...');
 
-        // Step 28: Reduce base price by -$100
-        await updateState({ step: 28, message: 'Step 28: Reducing base price by -$100...' });
+        // Step 26: Reduce base price by -$100
+        await updateState({ step: 26, message: 'Step 26: Reducing base price by -$100...' });
         await sendMessageToTab(originalTabId, { type: 'DECREASE_BASE_PRICE' });
         await new Promise(res => setTimeout(res, 500));
 
-        // Step 29: Click Save & Refresh button (extended wait)
-        await updateState({ step: 29, message: 'Step 29: Clicking Save & Refresh button...' });
+        // Step 27: Click Save & Refresh button (extended wait)
+        await updateState({ step: 27, message: 'Step 27: Clicking Save & Refresh button...' });
         await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
         await new Promise(res => setTimeout(res, 15000));
 
-        // Step 30: Click Sync Now button (dummy click, wait 3 seconds)
-        await updateState({ step: 30, message: 'Step 30: Clicking Sync Now button (dummy)...' });
+        // Step 28: Click Sync Now button (dummy click, wait 3 seconds)
+        await updateState({ step: 28, message: 'Step 28: Clicking Sync Now button (dummy)...' });
         await sendMessageToTab(originalTabId, { type: 'DUMMY_SYNC_CLICK' });
         await new Promise(res => setTimeout(res, 3000));
 
-        // Step 31: Click Edit button (following original steps 4-6)
-        await updateState({ step: 31, message: 'Step 31: Clicking Edit button...' });
+        // Step 29: Click Edit button (following original steps 4-6)
+        await updateState({ step: 29, message: 'Step 29: Clicking Edit button...' });
         await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_1_EDIT' });
         await new Promise(res => setTimeout(res, 3000));
 
-        // Step 32: Scrolling and clicking Edit Profile
-        await updateState({ step: 32, message: 'Step 32: Scrolling and clicking Edit Profile...' });
+        // Step 30: Scrolling and clicking Edit Profile
+        await updateState({ step: 30, message: 'Step 30: Scrolling and clicking Edit Profile...' });
         await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
         await new Promise(res => setTimeout(res, 3000));
 
-        // Step 33: Clicking Edit Profile button in popup - FINAL STEP
-        await updateState({ step: 33, message: 'Step 33: Clicking Edit Profile button in popup...' });
+        // Step 31: Clicking Edit Profile button in popup - FINAL STEP
+        await updateState({ step: 31, message: 'Step 31: Clicking Edit Profile button in popup...' });
         await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
         await new Promise(res => setTimeout(res, 3000));
 

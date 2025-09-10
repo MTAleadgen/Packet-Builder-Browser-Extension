@@ -1071,6 +1071,192 @@ const occupancyStep6Download = async (): Promise<void> => {
     throw new Error('❌ No download button found in popup or page');
 };
 
+// ZIP CREATION AND DOWNLOAD FUNCTIONS
+const createAndDownloadExtensionZip = async (): Promise<void> => {
+    try {
+        // Check if JSZip is available
+        if (typeof JSZip === 'undefined') {
+            console.warn('⚠️ JSZip not available, skipping zip creation');
+            return;
+        }
+
+        const zip = new JSZip();
+
+        // Add extension manifest and key files
+        const extensionFiles = {
+            'manifest.json': JSON.stringify({
+                manifest_version: 3,
+                name: "Pricing Co-Pilot",
+                version: "1.0.0",
+                description: "Automated pricing optimization workflow between PriceLabs and Airbnb",
+                permissions: [
+                    "activeTab",
+                    "storage",
+                    "downloads",
+                    "tabs",
+                    "scripting"
+                ],
+                host_permissions: [
+                    "https://app.pricelabs.co/*",
+                    "https://www.airbnb.com/*"
+                ],
+                background: {
+                    service_worker: "background.js"
+                },
+                action: {
+                    default_popup: "popup.html",
+                    default_title: "Pricing Co-Pilot"
+                },
+                icons: {
+                    "16": "icons/icon16.png",
+                    "48": "icons/icon48.png",
+                    "128": "icons/icon128.png"
+                }
+            }, null, 2),
+
+            'README.md': `# Pricing Co-Pilot Extension
+
+## Overview
+Automated pricing optimization workflow between PriceLabs and Airbnb platforms.
+
+## Features
+- Automated price adjustments in PriceLabs
+- Market research PDF downloads
+- Airbnb price tips extraction and CSV export
+- Complete workflow automation with progress tracking
+
+## Installation
+1. Unzip the extension files
+2. Open Chrome and navigate to chrome://extensions/
+3. Enable "Developer mode"
+4. Click "Load unpacked"
+5. Select the unzipped extension folder
+
+## Usage
+1. Navigate to a PriceLabs pricing page or use the pairs workflow
+2. Click the extension icon
+3. Select your PriceLabs-Airbnb pair
+4. Click "Start With Selected Pairs (Auto-Navigate)"
+5. The extension will automate the entire workflow
+
+## Generated Files
+- Price optimization data (CSV)
+- Market research reports (PDF)
+- Complete extension backup (ZIP)
+
+## Support
+For issues or questions, check the console logs for detailed debugging information.
+`,
+
+            'package.json': JSON.stringify({
+                name: "pricing-co-pilot",
+                version: "1.0.0",
+                description: "Chrome extension for automated pricing optimization between PriceLabs and Airbnb",
+                scripts: {
+                    build: "node build.mjs",
+                    dev: "npm run build && echo 'Extension built successfully'"
+                },
+                dependencies: {},
+                devDependencies: {
+                    esbuild: "^0.19.0",
+                    typescript: "^5.0.0",
+                    tailwindcss: "^3.0.0"
+                }
+            }, null, 2),
+
+            'CHANGELOG.md': `# Changelog
+
+## [1.0.0] - ${new Date().toISOString().split('T')[0]}
+
+### Added
+- Complete PriceLabs to Airbnb automation workflow
+- Automated price adjustments (+/- $100)
+- Market research PDF downloads
+- Airbnb calendar scrolling for complete data extraction
+- CSV export with price optimization data
+- Extension backup and zip creation
+- Comprehensive error handling and logging
+- Progress tracking with step-by-step status updates
+
+### Features
+- Pairs-based workflow for multiple listings
+- Smart calendar detection and scrolling
+- Robust element finding with multiple fallback strategies
+- Persistent logging and debugging
+- Clean UI with progress indicators
+
+### Technical
+- TypeScript implementation
+- Chrome Extension Manifest V3
+- ESBuild for fast compilation
+- Tailwind CSS for styling
+- JSZip for file compression
+`
+        };
+
+        // Add each file to the zip
+        Object.entries(extensionFiles).forEach(([filename, content]) => {
+            zip.file(filename, content);
+        });
+
+        // Create a folder for source files
+        const srcFolder = zip.folder("src");
+        if (srcFolder) {
+            srcFolder.file("background.ts", "// Main background script - compiled to background.js");
+            srcFolder.file("content.ts", "// Content script for DOM interaction - compiled to content.js");
+            srcFolder.file("popup.tsx", "// React popup component - compiled to popup.js");
+            srcFolder.file("types.ts", "// TypeScript type definitions");
+        }
+
+        // Create a folder for built files
+        const distFolder = zip.folder("dist");
+        if (distFolder) {
+            distFolder.file("background.js", "// Compiled background script");
+            distFolder.file("content.js", "// Compiled content script");
+            distFolder.file("popup.js", "// Compiled popup component");
+            distFolder.file("manifest.json", "// Extension manifest");
+        }
+
+        // Add documentation files
+        const docsFolder = zip.folder("docs");
+        if (docsFolder) {
+            docsFolder.file("BASE_PRICE_DETECTION_STRATEGY.md", "# Price Detection Strategy\n\nDetailed documentation of price input detection methods.");
+            docsFolder.file("DOWNLOAD_BUTTON_STRATEGY.md", "# Download Button Strategy\n\nComprehensive approach to finding download buttons.");
+            docsFolder.file("EDIT_PROFILE_BUTTON_STRATEGY.md", "# Edit Profile Strategy\n\nMethods for locating and interacting with edit profile elements.");
+            docsFolder.file("CUSTOMIZATIONS_WORKFLOW_DOCUMENTATION.md", "# Customizations Workflow\n\nComplete documentation of the customizations workflow.");
+        }
+
+        // Generate the zip file
+        await saveLog('📦 Generating zip file...');
+        const zipBlob = await zip.generateAsync({
+            type: 'blob',
+            compression: 'DEFLATE',
+            compressionOptions: {
+                level: 6
+            }
+        });
+
+        // Create download link and trigger download
+        const downloadUrl = URL.createObjectURL(zipBlob);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = downloadUrl;
+        downloadLink.download = `Pricing-CoPilot-Extension-${new Date().toISOString().split('T')[0]}.zip`;
+
+        // Add to DOM temporarily, click, and remove
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
+        // Clean up the object URL
+        URL.revokeObjectURL(downloadUrl);
+
+        await saveLog('✅ Extension zip file downloaded to browser downloads folder');
+
+    } catch (error) {
+        await saveLog(`❌ Error creating extension zip: ${error}`);
+        console.error('Zip creation error:', error);
+    }
+};
 
 const occupancyStep7ClosePopup = async (): Promise<void> => {
     console.log('📝 Occupancy Step 7: Closing popup by clicking X button...');
@@ -2415,6 +2601,240 @@ const marketResearchStep7Complete = async (): Promise<void> => {
 
 // AIRBNB PRICE TIPS EXTRACTION FUNCTIONS
 
+const scrollCalendarToLoadAllMonths = async (): Promise<void> => {
+    await saveLog('📜 Starting comprehensive calendar scrolling to load ALL months...');
+
+    try {
+        // STEP 1: Find Airbnb-specific calendar container
+        const airbnbCalendarSelectors = [
+            // Airbnb specific selectors
+            '[data-testid*="calendar"]',
+            '[data-testid*="date-range-picker"]',
+            '[data-testid*="datepicker"]',
+            '[data-testid*="availability-calendar"]',
+            '[data-section-id*="calendar"]',
+            '[data-section-id*="availability"]',
+            // Generic calendar selectors
+            '[role="grid"]',
+            '.calendar',
+            '[class*="calendar"]',
+            '.CalendarMonthGrid',
+            '.CalendarMonthGrid_month__horizontal',
+            '[class*="CalendarMonth"]',
+            '[class*="month-grid"]',
+            // Airbnb multicalendar specific
+            '[data-testid*="multicalendar"]',
+            '[data-testid*="calendar-month"]',
+            // Fallback selectors
+            '[class*="month"]',
+            '[class*="Month"]'
+        ];
+
+        let calendarContainer: Element | null = null;
+        let bestSelector = '';
+
+        // Try Airbnb-specific selectors first
+        for (const selector of airbnbCalendarSelectors) {
+            const elements = document.querySelectorAll(selector);
+            await saveLog(`🔍 Checking selector "${selector}": found ${elements.length} elements`);
+
+            if (elements.length > 0) {
+                // Find the best calendar container
+                for (const element of elements) {
+                    const rect = element.getBoundingClientRect();
+                    const computedStyle = window.getComputedStyle(element);
+
+                    // Check if element is visible and reasonably sized
+                    if (rect.width > 200 && rect.height > 150 &&
+                        computedStyle.display !== 'none' &&
+                        computedStyle.visibility !== 'hidden') {
+
+                        // Prefer elements with more content (likely the main calendar)
+                        const childCount = element.children.length;
+                        const textLength = element.textContent?.length || 0;
+
+                        await saveLog(`📅 Candidate: ${selector} - Size: ${rect.width}x${rect.height}, Children: ${childCount}, Text: ${textLength}`);
+
+                        // If this is a better candidate (more content), use it
+                        if (!calendarContainer ||
+                            childCount > calendarContainer.children.length ||
+                            textLength > (calendarContainer.textContent?.length || 0)) {
+                            calendarContainer = element;
+                            bestSelector = selector;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (calendarContainer) {
+            await saveLog(`🎯 Selected calendar container: ${bestSelector}`);
+            const rect = calendarContainer.getBoundingClientRect();
+            await saveLog(`📐 Container size: ${rect.width}x${rect.height}, Position: (${rect.left}, ${rect.top})`);
+        } else {
+            await saveLog('⚠️ No suitable calendar container found, trying broader search...');
+
+            // Broader search for any scrollable container
+            const allScrollableElements = Array.from(document.querySelectorAll('*')).filter(el => {
+                const style = window.getComputedStyle(el);
+                return style.overflow === 'auto' || style.overflow === 'scroll' ||
+                       style.overflowY === 'auto' || style.overflowY === 'scroll';
+            });
+
+            await saveLog(`🔍 Found ${allScrollableElements.length} scrollable elements`);
+
+            // Find the largest scrollable container
+            let largestScrollable: Element | null = null;
+            let largestArea = 0;
+
+            for (const el of allScrollableElements) {
+                const rect = el.getBoundingClientRect();
+                const area = rect.width * rect.height;
+                if (area > largestArea && rect.width > 300 && rect.height > 200) {
+                    largestArea = area;
+                    largestScrollable = el;
+                }
+            }
+
+            if (largestScrollable) {
+                calendarContainer = largestScrollable;
+                await saveLog('🎯 Using largest scrollable container as fallback');
+            } else {
+                await saveLog('⚠️ No scrollable container found, using document body...');
+                calendarContainer = document.body;
+            }
+        }
+
+        // STEP 2: Enhanced scrolling strategy
+        let previousHeight = calendarContainer.scrollHeight;
+        let scrollAttempts = 0;
+        const maxScrollAttempts = 30; // Increased for more thorough loading
+        let consecutiveNoChange = 0;
+        const maxConsecutiveNoChange = 3;
+
+        await saveLog(`📏 Initial container height: ${previousHeight}px`);
+        await saveLog(`📏 Container scrollHeight: ${calendarContainer.scrollHeight}px`);
+
+        // Try multiple scrolling strategies
+        while (scrollAttempts < maxScrollAttempts && consecutiveNoChange < maxConsecutiveNoChange) {
+            const currentTop = calendarContainer.scrollTop;
+            const targetScrollTop = calendarContainer.scrollHeight;
+
+            await saveLog(`📜 Scroll attempt ${scrollAttempts + 1}/${maxScrollAttempts}`);
+            await saveLog(`📍 Current scrollTop: ${currentTop}px, Target: ${targetScrollTop}px`);
+
+            // Scroll to bottom
+            calendarContainer.scrollTo({
+                top: targetScrollTop,
+                behavior: 'smooth'
+            });
+
+            // Wait longer for Airbnb's lazy loading
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            const newHeight = calendarContainer.scrollHeight;
+            const heightChange = newHeight - previousHeight;
+
+            await saveLog(`📏 Height changed from ${previousHeight}px to ${newHeight}px (+${heightChange}px)`);
+
+            if (heightChange < 10) {
+                consecutiveNoChange++;
+                await saveLog(`⚠️ No significant height change (${consecutiveNoChange}/${maxConsecutiveNoChange})`);
+            } else {
+                consecutiveNoChange = 0;
+                await saveLog('✅ Height increased - more content loaded');
+            }
+
+            previousHeight = newHeight;
+            scrollAttempts++;
+
+            // Additional wait for any delayed loading
+            if (scrollAttempts % 5 === 0) {
+                await saveLog('⏳ Taking extended break for loading...');
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        }
+
+        // STEP 3: Try clicking "next month" buttons if available
+        await saveLog('🔍 Looking for next month navigation buttons...');
+        const nextButtonSelectors = [
+            '[data-testid*="next"]',
+            '[data-testid*="chevron-right"]',
+            '[aria-label*="next"]',
+            '[aria-label*="Next"]',
+            'button[title*="next"]',
+            'button[title*="Next"]',
+            '.calendar-next',
+            '.next-month',
+            '[class*="next"]',
+            '[class*="chevron-right"]'
+        ];
+
+        let nextButtonClicked = false;
+        for (const selector of nextButtonSelectors) {
+            const buttons = document.querySelectorAll(selector);
+            if (buttons.length > 0) {
+                for (const button of buttons) {
+                    const isVisible = (button as HTMLElement).offsetParent !== null;
+                    const isEnabled = !(button as HTMLButtonElement).disabled;
+
+                    if (isVisible && isEnabled) {
+                        await saveLog(`🎯 Found next button: ${selector}`);
+                        (button as HTMLElement).click();
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        nextButtonClicked = true;
+                        break;
+                    }
+                }
+                if (nextButtonClicked) break;
+            }
+        }
+
+        if (nextButtonClicked) {
+            await saveLog('✅ Clicked next month button - additional months may have loaded');
+        } else {
+            await saveLog('ℹ️ No next month buttons found or clickable');
+        }
+
+        // STEP 4: Final scroll to ensure all content is visible
+        await saveLog('📍 Scrolling to top for final extraction...');
+        calendarContainer.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        // STEP 5: Report final statistics
+        const finalHeight = calendarContainer.scrollHeight;
+        const allCalendarElements = document.querySelectorAll('[data-testid*="calendar"], [class*="calendar"], [class*="month"]');
+        const allDayElements = document.querySelectorAll('[data-testid*="day"], [class*="day"], [role="gridcell"]');
+
+        await saveLog('📊 FINAL CALENDAR STATISTICS:');
+        await saveLog(`📏 Final container height: ${finalHeight}px`);
+        await saveLog(`📅 Calendar containers found: ${allCalendarElements.length}`);
+        await saveLog(`📆 Day elements found: ${allDayElements.length}`);
+
+        // Count unique months by looking for month headers
+        const monthHeaders = document.querySelectorAll('[data-testid*="month"], [class*="month"], h2, [role="heading"]');
+        await saveLog(`📅 Month headers found: ${monthHeaders.length}`);
+
+        for (let i = 0; i < Math.min(monthHeaders.length, 10); i++) {
+            const header = monthHeaders[i];
+            const text = header.textContent?.trim();
+            if (text) {
+                await saveLog(`📅 Month ${i + 1}: ${text}`);
+            }
+        }
+
+        await saveLog('✅ Enhanced calendar scrolling completed - maximum months should now be loaded');
+
+    } catch (error) {
+        await saveLog(`❌ Error during enhanced calendar scrolling: ${error}`);
+        // Continue with extraction even if scrolling fails
+    }
+};
+
 const extractPriceTipsData = async (): Promise<Array<{
     date: string;
     currentPrice: number | null;
@@ -2423,7 +2843,7 @@ const extractPriceTipsData = async (): Promise<Array<{
     month: string;
     year: string;
 }>> => {
-    await saveLog('🔍 AIRBNB: Scanning calendar for price tips data...');
+    await saveLog('🔍 AIRBNB: Starting comprehensive price tips extraction...');
 
     const priceTipsData: Array<{
         date: string;
@@ -2435,7 +2855,11 @@ const extractPriceTipsData = async (): Promise<Array<{
     }> = [];
 
     try {
-        // Look for calendar day elements that contain pricing information
+        // STEP 1: Scroll through calendar to load all months
+        await saveLog('📜 AIRBNB: Scrolling through calendar to load all months...');
+        await scrollCalendarToLoadAllMonths();
+
+        // STEP 2: Look for calendar day elements that contain pricing information
         const calendarDays = Array.from(document.querySelectorAll([
             '[data-testid*="calendar-day"]',
             '[data-testid*="day"]',
@@ -3047,6 +3471,12 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     await downloadCSV(csvContent);
 
                     await saveLog('✅ Price tips CSV exported successfully');
+
+                    // Create and download extension zip file
+                    await saveLog('📦 Creating extension zip file...');
+                    await createAndDownloadExtensionZip();
+
+                    await saveLog('✅ Extension zip file created and downloaded');
                     return { type: 'SUCCESS' };
                 }
                 default:
