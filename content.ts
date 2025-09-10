@@ -99,8 +99,10 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                 }
                 case 'SET_BASE_PRICE': {
                     const input = await getBasePriceInput();
+
                     input.click();
                     input.focus();
+
                     input.value = message.price.toString();
                     // Dispatch events to make sure the web app's framework (e.g., React) picks up the change.
                     input.dispatchEvent(new Event('input', { bubbles: true }));
