@@ -1,8 +1,13 @@
 import { build } from 'esbuild';
 
 import { rm, mkdir, cp, readFile, writeFile } from 'fs/promises';
-
+import { exec } from 'child_process';
 import path from 'path';
+import { promisify } from 'util';
+import { createRequire } from 'module';
+
+const execAsync = promisify(exec);
+const require = createRequire(import.meta.url);
 
 const outDir = path.resolve('dist');
 
@@ -13,7 +18,7 @@ async function clean() {
 
 async function copyStatic() {
 
-  const files = ['manifest.json', 'popup.html', 'index.html', 'metadata.json', 'import-map.json'];
+  const files = ['manifest.json', 'popup.html', 'metadata.json'];
 
   for (const file of files) {
     try {
@@ -27,7 +32,8 @@ async function copyStatic() {
   // Sanitize JSZip to avoid octal escape sequences that break in strict mode
   try {
     await mkdir(path.join(outDir, 'lib'), { recursive: true });
-    const jszip = await readFile(path.join('lib', 'jszip.min.js'), 'utf8');
+    const jszipPath = require.resolve('jszip/dist/jszip.min.js');
+    const jszip = await readFile(jszipPath, 'utf8');
     const sanitized = jszip.replace(/\\([0-7]{1,3})/g, (_, oct) =>
       '\\x' + parseInt(oct, 8).toString(16).padStart(2, '0'),
     );
@@ -54,10 +60,16 @@ async function buildScripts() {
     format: 'esm',
     target: ['chrome110'],
     sourcemap: true,
-    external: ['react', 'react-dom', 'react-dom/client'],
   });
+}
+
+async function buildTailwind() {
+  const input = path.resolve('styles.css');
+  const output = path.join(outDir, 'tailwind.css');
+  await execAsync(`npx tailwindcss -i "${input}" -o "${output}" --minify`);
 }
 
 await clean();
 await buildScripts();
+await buildTailwind();
 await copyStatic();

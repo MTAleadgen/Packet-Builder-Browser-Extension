@@ -22,8 +22,18 @@ export const PopupApp: React.FC = () => {
     // Check if on a valid PriceLabs page
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const currentTab = tabs[0];
-      if (currentTab?.url?.startsWith('https://app.pricelabs.co/listing/')) {
-        setIsPriceLabsPage(true);
+      const url = currentTab?.url ?? '';
+      try {
+        const u = new URL(url);
+        if (
+          u.hostname === 'app.pricelabs.co' &&
+          u.pathname === '/pricing' &&
+          u.searchParams.has('listings')
+        ) {
+          setIsPriceLabsPage(true);
+        }
+      } catch (e) {
+        // ignore invalid URL
       }
       setIsLoading(false);
     });
@@ -67,7 +77,7 @@ export const PopupApp: React.FC = () => {
         <div className="text-center p-4 bg-yellow-900/50 rounded-lg m-4">
           <h3 className="font-bold text-lg text-yellow-300">Action Required</h3>
           <p className="text-yellow-100 mt-2">Please navigate to a PriceLabs listing calendar page to begin.</p>
-          <p className="text-xs text-yellow-200/60 mt-2">(URL should start with https://app.pricelabs.co/listing/...)</p>
+          <p className="text-xs text-yellow-200/60 mt-2">(URL should start with https://app.pricelabs.co/pricing?listings)</p>
         </div>
       );
     }
