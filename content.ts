@@ -63,16 +63,36 @@ const waitForElementToDisappear = (selector: string, timeout = 10000): Promise<v
 };
 
 const getBasePriceInput = async (): Promise<HTMLInputElement> => {
-    try {
-        return await waitForElement(
-            'input[data-testid="base-price-input"], input[name="basePrice"], input[id="basePrice"], input[name="base_price"], input[id="base_price"]'
-        ) as HTMLInputElement;
-    } catch {
-        const label = Array.from(document.querySelectorAll('label')).find(el => /base price/i.test(el.textContent || ''));
-        const input = label?.closest('div')?.querySelector('input');
-        if (input) return input as HTMLInputElement;
-        throw new Error('Base price input not found');
+
+    const selectors = [
+        'input[data-testid="base-price-input"]',
+        'input[name="basePrice"]',
+        'input[id="basePrice"]',
+        'input[name="base_price"]',
+        'input[id="base_price"]',
+        'input[name="base"]',
+        'input[id="base"]',
+        'input[aria-label*="base" i]',
+        'input[placeholder*="base" i]'
+    ];
+
+    for (const selector of selectors) {
+        try {
+            const el = await waitForElement(selector, 1000) as HTMLInputElement;
+            const price = parseFloat(el.value.replace(/[^0-9.-]/g, ''));
+            if (!isNaN(price)) {
+                return el;
+            }
+        } catch {
+            // Try next selector
+        }
     }
+
+    const label = Array.from(document.querySelectorAll('label')).find(el => /base/i.test(el.textContent || ''));
+    const input = label?.closest('div')?.querySelector('input');
+    if (input) return input as HTMLInputElement;
+    throw new Error('Base price input not found');
+
 };
 
 const getSaveRefreshButton = async (): Promise<HTMLElement> => {
