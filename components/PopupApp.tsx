@@ -19,11 +19,6 @@ export const PopupApp: React.FC = () => {
   const [isCustomizationPage, setIsCustomizationPage] = useState<boolean>(false);
   const [currentUrl, setCurrentUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
-  const [showLogs, setShowLogs] = useState<boolean>(false);
-  const [persistentLogs, setPersistentLogs] = useState<any[]>([]);
-  const [showPersistentLogs, setShowPersistentLogs] = useState<boolean>(false);
-  const [airbnbUrl, setAirbnbUrl] = useState<string>('https://www.airbnb.com/multicalendar/1317460106754094447');
   const [pairs, setPairs] = useState<LinkPair[]>([{
     priceLabsUrl: 'https://app.pricelabs.co/pricing?listings=1317460106754094447&pms_name=airbnb&open_calendar=true',
     airbnbUrl: 'https://www.airbnb.com/multicalendar/1317460106754094447'
@@ -31,26 +26,7 @@ export const PopupApp: React.FC = () => {
   const [selectedIndexes, setSelectedIndexes] = useState<Record<number, boolean>>({ 0: true });
   const [isPairsMode, setIsPairsMode] = useState<boolean>(false);
 
-  const addLog = useCallback((message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    const logEntry = `[${timestamp}] ${message}`;
-    setDebugLogs(prev => {
-      // Prevent duplicate consecutive logs to avoid spam
-      if (prev.length > 0 && prev[prev.length - 1] === logEntry) {
-        return prev;
-      }
-      return [...prev.slice(-49), logEntry]; // Keep last 50 logs
-    });
-    console.log('🔍 POPUP LOG:', logEntry);
-  }, []);
-
   useEffect(() => {
-    // Load Airbnb URL from storage
-    chrome.storage.local.get(['airbnbMulticalendarUrl'], (result) => {
-      if (result.airbnbMulticalendarUrl) {
-        setAirbnbUrl(result.airbnbMulticalendarUrl);
-      }
-    });
 
     // Check if on a valid PriceLabs page
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -135,35 +111,7 @@ export const PopupApp: React.FC = () => {
     chrome.runtime.sendMessage({ type: 'RESET_WORKFLOW' });
   }, []);
 
-  const loadPersistentLogs = useCallback(async () => {
-    try {
-      const result = await chrome.storage.local.get(['workflowLogs']);
-      const logs = result.workflowLogs || [];
-      setPersistentLogs(logs);
-      console.log('📋 Loaded persistent logs:', logs.length, 'entries');
-    } catch (error) {
-      console.error('Failed to load persistent logs:', error);
-    }
-  }, []);
 
-  const clearPersistentLogs = useCallback(async () => {
-    try {
-      await chrome.storage.local.remove(['workflowLogs']);
-      setPersistentLogs([]);
-      console.log('🗑️ Cleared persistent logs');
-    } catch (error) {
-      console.error('Failed to clear persistent logs:', error);
-    }
-  }, []);
-
-  const saveAirbnbUrl = useCallback(async () => {
-    try {
-      await chrome.storage.local.set({ airbnbMulticalendarUrl: airbnbUrl });
-      console.log('💾 Saved Airbnb multicalendar URL:', airbnbUrl);
-    } catch (error) {
-      console.error('Failed to save Airbnb URL:', error);
-    }
-  }, [airbnbUrl]);
 
   const addPair = useCallback(() => {
     setPairs(prev => ([...prev, { priceLabsUrl: '', airbnbUrl: '' }]));
@@ -309,76 +257,6 @@ export const PopupApp: React.FC = () => {
               Customization Page: {isCustomizationPage ? '✅ Yes' : '❌ No'}
             </div>
 
-            <div className="mt-4 space-y-2">
-              <label className="block text-xs font-medium text-gray-300">
-                Airbnb Multicalendar URL:
-              </label>
-              <input
-                type="text"
-                value={airbnbUrl}
-                onChange={(e) => setAirbnbUrl(e.target.value)}
-                placeholder="https://www.airbnb.com/multicalendar/..."
-                className="w-full px-3 py-2 text-xs bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                onClick={saveAirbnbUrl}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-1 px-3 rounded transition-all duration-300"
-              >
-                💾 Save Airbnb URL
-              </button>
-            </div>
-            <div className="space-y-2 mt-4">
-              <button
-                onClick={() => setShowLogs(!showLogs)}
-                className="w-full bg-gray-700 hover:bg-gray-600 text-white text-xs py-2 px-3 rounded"
-              >
-                {showLogs ? 'Hide Debug Info' : 'Show Debug Info'}
-              </button>
-              <button
-                onClick={async () => {
-                  await loadPersistentLogs();
-                  setShowPersistentLogs(!showPersistentLogs);
-                }}
-                className="w-full bg-purple-700 hover:bg-purple-600 text-white text-xs py-2 px-3 rounded"
-              >
-                {showPersistentLogs ? 'Hide Persistent Logs' : 'Load Persistent Logs'}
-              </button>
-              {persistentLogs.length > 0 && (
-                <button
-                  onClick={clearPersistentLogs}
-                  className="w-full bg-red-700 hover:bg-red-600 text-white text-xs py-2 px-3 rounded"
-                >
-                  Clear Persistent Logs
-                </button>
-              )}
-            </div>
-            {showLogs && (
-              <div className="mt-2 bg-black text-green-400 text-xs p-2 rounded font-mono">
-                <div>URL: {currentUrl}</div>
-                <div>Valid Page: {isPriceLabsPage ? '✅' : '❌'}</div>
-                <div>Resume Enabled: {isCustomizationPage ? '✅' : '❌'}</div>
-                <div>Status: {workflowState.status}</div>
-                <div>Step: {workflowState.step}/{workflowState.totalSteps}</div>
-                <div className="mt-1 text-yellow-400">Check console for detailed logs</div>
-              </div>
-            )}
-            {showPersistentLogs && persistentLogs.length > 0 && (
-              <div className="mt-2 bg-gray-900 text-blue-400 text-xs p-2 rounded font-mono max-h-64 overflow-y-auto">
-                <div className="font-bold text-blue-300 mb-2">📋 Persistent Logs ({persistentLogs.length} entries)</div>
-                {persistentLogs.map((log, index) => (
-                  <div key={index} className="border-b border-gray-700 pb-1 mb-1 last:border-b-0">
-                    <div className="text-blue-500 text-xs">{new Date(log.timestamp).toLocaleString()}</div>
-                    <div className="text-blue-400">{log.message}</div>
-                    {log.data && (
-                      <div className="text-blue-300 text-xs mt-1 pl-2 border-l-2 border-blue-600">
-                        {typeof log.data === 'object' ? JSON.stringify(log.data, null, 2) : log.data}
-                      </div>
-                    )}
-                    <div className="text-blue-600 text-xs">URL: {log.url}</div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         );
       case WorkflowStatus.RUNNING:
@@ -391,20 +269,6 @@ export const PopupApp: React.FC = () => {
             >
               Cancel
             </button>
-            <button
-              onClick={() => setShowLogs(!showLogs)}
-              className="w-full bg-gray-700 hover:bg-gray-600 text-white text-xs py-1 px-2 rounded mt-1"
-            >
-              {showLogs ? 'Hide Info' : 'Debug Info'}
-            </button>
-            {showLogs && (
-              <div className="mt-1 bg-black text-green-400 text-xs p-2 rounded font-mono">
-                <div>Status: {workflowState.status}</div>
-                <div>Step: {workflowState.step}/{workflowState.totalSteps}</div>
-                <div>Message: {workflowState.message}</div>
-                <div className="text-yellow-400">Check console for logs</div>
-              </div>
-            )}
           </div>
         );
       case WorkflowStatus.SUCCESS:
@@ -429,59 +293,6 @@ export const PopupApp: React.FC = () => {
               >
                 Try Again
               </button>
-              <div className="space-y-2 mt-4">
-                <button
-                  onClick={() => setShowLogs(!showLogs)}
-                  className="w-full bg-gray-700 hover:bg-gray-600 text-white text-xs py-2 px-3 rounded"
-                >
-                  {showLogs ? 'Hide Debug Info' : 'Show Debug Info'}
-                </button>
-                <button
-                  onClick={async () => {
-                    await loadPersistentLogs();
-                    setShowPersistentLogs(!showPersistentLogs);
-                  }}
-                  className="w-full bg-purple-700 hover:bg-purple-600 text-white text-xs py-2 px-3 rounded"
-                >
-                  {showPersistentLogs ? 'Hide Persistent Logs' : 'Load Persistent Logs'}
-                </button>
-                {persistentLogs.length > 0 && (
-                  <button
-                    onClick={clearPersistentLogs}
-                    className="w-full bg-red-700 hover:bg-red-600 text-white text-xs py-2 px-3 rounded"
-                  >
-                    Clear Persistent Logs
-                  </button>
-                )}
-              </div>
-              {showLogs && (
-                <div className="mt-2 bg-black text-green-400 text-xs p-2 rounded font-mono">
-                  <div>URL: {currentUrl}</div>
-                  <div>Valid Page: {isPriceLabsPage ? '✅' : '❌'}</div>
-                  <div>Resume Enabled: {isCustomizationPage ? '✅' : '❌'}</div>
-                  <div>Status: {workflowState.status}</div>
-                  <div>Step: {workflowState.step}/{workflowState.totalSteps}</div>
-                  <div>Error: {workflowState.message}</div>
-                  <div className="mt-1 text-yellow-400">Check console for detailed logs</div>
-                </div>
-              )}
-              {showPersistentLogs && persistentLogs.length > 0 && (
-                <div className="mt-2 bg-gray-900 text-blue-400 text-xs p-2 rounded font-mono max-h-64 overflow-y-auto">
-                  <div className="font-bold text-blue-300 mb-2">📋 Persistent Logs ({persistentLogs.length} entries)</div>
-                  {persistentLogs.map((log, index) => (
-                    <div key={index} className="border-b border-gray-700 pb-1 mb-1 last:border-b-0">
-                      <div className="text-blue-500 text-xs">{new Date(log.timestamp).toLocaleString()}</div>
-                      <div className="text-blue-400">{log.message}</div>
-                      {log.data && (
-                        <div className="text-blue-300 text-xs mt-1 pl-2 border-l-2 border-blue-600">
-                          {typeof log.data === 'object' ? JSON.stringify(log.data, null, 2) : log.data}
-                        </div>
-                      )}
-                      <div className="text-blue-600 text-xs">URL: {log.url}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
               <div className="mt-2 text-xs text-red-200">
                 Open browser console (F12) for detailed error logs
               </div>

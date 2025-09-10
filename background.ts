@@ -5,7 +5,7 @@ let state: WorkflowState = {
     status: WorkflowStatus.IDLE,
     message: 'Ready to start.',
     step: 1,
-    totalSteps: 27
+    totalSteps: 33
 };
 
 let originalTabId: number;
@@ -87,13 +87,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             console.log('🚀 Starting workflow with selected pairs:', selectedPairs);
             if (!selectedPairs || selectedPairs.length === 0) {
                 updateState({ status: WorkflowStatus.ERROR, message: 'No link pairs selected' });
-                break;
+            break;
             }
             const selectedPair = selectedPairs[0];
             if (!selectedPair.priceLabsUrl) {
                 updateState({ status: WorkflowStatus.ERROR, message: 'PriceLabs URL is required' });
-                break;
-            }
+            break;
+    }
             chrome.storage.local.set({ selectedPair });
             startWorkflowWithPair(selectedPair.priceLabsUrl, selectedPair.airbnbUrl);
             break;
@@ -688,9 +688,10 @@ async function navigateToAirbnbMulticalendar() {
     console.log('🛫 Starting Airbnb multicalendar navigation...');
 
     try {
-        // Get the Airbnb URL from storage, default to hardcoded value
-        const result = await chrome.storage.local.get(['airbnbMulticalendarUrl']);
-        const airbnbUrl = result.airbnbMulticalendarUrl || 'https://www.airbnb.com/multicalendar/1317460106754094447';
+        // Get the Airbnb URL from the selected pair, fallback to default
+        const result = await chrome.storage.local.get(['selectedPair']);
+        const selectedPair = result.selectedPair;
+        const airbnbUrl = selectedPair?.airbnbUrl || 'https://www.airbnb.com/multicalendar/1317460106754094447';
 
         console.log('🎯 Navigating to Airbnb multicalendar in same tab:', airbnbUrl);
 
@@ -862,7 +863,9 @@ async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
 }
 
 async function proceedAfterInitialSteps() {
-    // Mirror the existing main flow from Step 3 onward
+    // Continue the workflow from where startWorkflowWithPair left off
+    // startWorkflowWithPair completed steps 1-2, so we continue from step 3
+
     await updateState({ step: 3, message: 'Step 3: Clicking Sync Now button (dummy)...' });
     await sendMessageToTab(originalTabId, { type: 'DUMMY_SYNC_CLICK' });
     await new Promise(res => setTimeout(res, 3000));
@@ -891,7 +894,55 @@ async function proceedAfterInitialSteps() {
     await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_1_DYNAMIC_PRICING' });
     await new Promise(res => setTimeout(res, 3000));
 
-    // Continue from Market Research workflow within the same tab
+    // Continue with Market Research workflow steps 10-20
+    await updateState({ step: 10, message: 'Step 10: Clicking Market Research dropdown...' });
+    await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_1_DROPDOWN' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    await updateState({ step: 11, message: 'Step 11: Selecting Market Dashboard (navigation expected)...' });
+    try {
+        await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_2_MARKET_DASHBOARD' });
+        console.log('✅ Market Dashboard selection completed without disconnection');
+        await new Promise(res => setTimeout(res, 3000));
+    } catch (navigationError) {
+        console.log('📍 EXPECTED: Content script disconnected during Market Dashboard navigation');
+        console.log('📍 This is normal for page navigation - continuing workflow...');
+        console.log('📍 Navigation error:', navigationError.message);
+
+        // Wait for navigation to complete
+        console.log('⏳ Waiting for Market Research navigation to complete...');
+        await new Promise(res => setTimeout(res, 8000)); // Extended wait for navigation
+
+        // Check if we successfully navigated to reports page
+        const [navTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const navUrl = navTab?.url ?? '';
+        console.log('🔍 Navigation result URL:', navUrl);
+
+        if (navUrl.includes('/reports')) {
+            console.log('✅ Successfully navigated to Market Research page');
+            console.log('🔄 Continuing workflow with Show Dashboard...');
+
+            // Re-inject content script for Show Dashboard functionality
+            console.log('🔄 Re-injecting content script on reports page...');
+            await injectScript(originalTabId);
+            await waitForTabLoad(originalTabId);
+
+            // Wait for page to be ready
+            console.log('🔄 Waiting for reports page to be ready...');
+            await new Promise(res => setTimeout(res, 5000)); // Wait for React components
+        } else {
+            throw new Error('Failed to navigate to Market Research reports page');
+        }
+    }
+
+    await updateState({ step: 12, message: 'Step 12: Completing navigation...' });
+    await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_3_COMPLETE' });
+
+    // Wait for Market Research page navigation (NO FORCED SCRIPT INJECTION)
+    console.log('🔄 Waiting for Market Research page navigation...');
+    await new Promise(res => setTimeout(res, 5000));
+
+    // Continue from Market Research workflow (Show Dashboard and beyond)
     await resumeMarketResearchWorkflow(21);
 }
 
@@ -909,7 +960,63 @@ async function navigateBackToPriceLabsIfPairStored() {
         await injectScript(originalTabId);
         await waitForTabLoad(originalTabId);
         console.log('✅ Back on PriceLabs page');
+
+        // After navigating back, reduce the base price by -$100
+        await reduceBasePriceWorkflow();
+
     } catch (e) {
         console.error('Failed to navigate back to PriceLabs:', e);
+    }
+}
+
+async function reduceBasePriceWorkflow() {
+    try {
+        console.log('💰 Starting base price reduction workflow...');
+
+        // Step 28: Reduce base price by -$100
+        await updateState({ step: 28, message: 'Step 28: Reducing base price by -$100...' });
+        await sendMessageToTab(originalTabId, { type: 'DECREASE_BASE_PRICE' });
+        await new Promise(res => setTimeout(res, 500));
+
+        // Step 29: Click Save & Refresh button (extended wait)
+        await updateState({ step: 29, message: 'Step 29: Clicking Save & Refresh button...' });
+        await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
+        await new Promise(res => setTimeout(res, 15000));
+
+        // Step 30: Click Sync Now button (dummy click, wait 3 seconds)
+        await updateState({ step: 30, message: 'Step 30: Clicking Sync Now button (dummy)...' });
+        await sendMessageToTab(originalTabId, { type: 'DUMMY_SYNC_CLICK' });
+        await new Promise(res => setTimeout(res, 3000));
+
+        // Step 31: Click Edit button (following original steps 4-6)
+        await updateState({ step: 31, message: 'Step 31: Clicking Edit button...' });
+        await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_1_EDIT' });
+        await new Promise(res => setTimeout(res, 3000));
+
+        // Step 32: Scrolling and clicking Edit Profile
+        await updateState({ step: 32, message: 'Step 32: Scrolling and clicking Edit Profile...' });
+        await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
+        await new Promise(res => setTimeout(res, 3000));
+
+        // Step 33: Clicking Edit Profile button in popup - FINAL STEP
+        await updateState({ step: 33, message: 'Step 33: Clicking Edit Profile button in popup...' });
+        await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
+        await new Promise(res => setTimeout(res, 3000));
+
+        console.log('✅ Base price reduction workflow completed - Edit Profile popup opened, workflow finished');
+
+        // Final success
+        await updateState({
+            status: WorkflowStatus.SUCCESS,
+            message: `Complete workflow finished! Price increased, PDF downloaded, Airbnb visited, CSV exported, and price reduced back to original.`,
+        });
+        await clearWorkflowState();
+
+    } catch (error) {
+        console.error('❌ Error in base price reduction workflow:', error);
+        await updateState({
+            status: WorkflowStatus.ERROR,
+            message: `Error at step ${state.step}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        });
     }
 }

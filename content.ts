@@ -1071,6 +1071,7 @@ const occupancyStep6Download = async (): Promise<void> => {
     throw new Error('❌ No download button found in popup or page');
 };
 
+
 const occupancyStep7ClosePopup = async (): Promise<void> => {
     console.log('📝 Occupancy Step 7: Closing popup by clicking X button...');
     await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for download to start
@@ -2804,6 +2805,41 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     input.dispatchEvent(new Event('change', { bubbles: true }));
 
                     await saveLog('✅ INCREASE_BASE_PRICE: Successfully increased base price from', currentPrice, 'to', newPrice);
+
+                    // Wait a moment for the change to register
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    return { type: 'SUCCESS' };
+                }
+                case 'DECREASE_BASE_PRICE': {
+                    await saveLog('💰 DECREASE_BASE_PRICE: Starting base price decrease by -$100');
+
+                    // Get current base price
+                    const input = await getBasePriceInput();
+                    const currentValue = input.value;
+                    const currentPrice = parseFloat(currentValue.replace(/[^0-9.-]/g, ''));
+
+                    if (isNaN(currentPrice)) {
+                        await saveLog('❌ DECREASE_BASE_PRICE: Could not parse current price:', currentValue);
+                        throw new Error(`Could not parse current base price from value "${currentValue}"`);
+                    }
+
+                    await saveLog('📊 DECREASE_BASE_PRICE: Current price:', currentPrice);
+
+                    // Decrease by -$100
+                    const newPrice = currentPrice - 100;
+                    await saveLog('💰 DECREASE_BASE_PRICE: New price will be:', newPrice);
+
+                    // Set the new price
+                    input.click();
+                    input.focus();
+                    input.value = newPrice.toString();
+
+                    // Dispatch events to ensure the web app framework detects the change
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+
+                    await saveLog('✅ DECREASE_BASE_PRICE: Successfully decreased base price from', currentPrice, 'to', newPrice);
 
                     // Wait a moment for the change to register
                     await new Promise(resolve => setTimeout(resolve, 500));
