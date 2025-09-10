@@ -92,8 +92,17 @@ async function startWorkflow() {
         // Step 2: Increase price, save, and sync
         updateState({ step: 2, message: 'Increasing base price and syncing...' });
         const newPrice = originalBasePrice + 100;
-        
+
         await sendMessageToTab(originalTabId, { type: 'SET_BASE_PRICE', price: newPrice });
+        // Allow UI to register the change before proceeding.
+        await new Promise(res => setTimeout(res, 500));
+        const verify = await sendMessageToTab<{ type: 'BASE_PRICE_RESPONSE', price: number }>(
+            originalTabId,
+            { type: 'GET_BASE_PRICE' }
+        );
+        if (verify.price !== newPrice) {
+            throw new Error(`Base price did not update to ${newPrice}, found ${verify.price}`);
+        }
 
         // IMPORTANT: The following selectors are placeholders for PriceLabs except for the save/refresh action.
         const LOADING_OVERLAY_SELECTOR = 'div[data-testid="loading-spinner-overlay"]';
@@ -101,11 +110,13 @@ async function startWorkflow() {
         const SYNC_TOAST_SELECTOR = 'div[data-testid="sync-success-toast"]';
 
         await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR });
+
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR, timeout: 12000 });
+
         await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SYNC_NOW_SELECTOR });
-        
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT', selector: SYNC_TOAST_SELECTOR });
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: SYNC_TOAST_SELECTOR });
+
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT', selector: SYNC_TOAST_SELECTOR, timeout: 12000 });
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: SYNC_TOAST_SELECTOR, timeout: 12000 });
         
         // --- Step 3: Airbnb Screenshot ---
         updateState({ step: 3, message: 'Opening Airbnb calendar...' });
@@ -164,10 +175,12 @@ async function startWorkflow() {
 
         await sendMessageToTab(originalTabId, { type: 'SET_BASE_PRICE', price: priceToRevert });
         await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR });
+
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR, timeout: 12000 });
+
         await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SYNC_NOW_SELECTOR });
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT', selector: SYNC_TOAST_SELECTOR });
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: SYNC_TOAST_SELECTOR });
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT', selector: SYNC_TOAST_SELECTOR, timeout: 12000 });
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: SYNC_TOAST_SELECTOR, timeout: 12000 });
         
         // --- Step 8: Package and Finalize ---
         updateState({ step: 8, message: 'Packaging files into a .zip archive...' });

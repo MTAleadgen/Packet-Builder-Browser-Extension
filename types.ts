@@ -25,8 +25,8 @@ export type ContentScriptMessage =
   | { type: 'SET_BASE_PRICE', price: number }
   | { type: 'CLICK_SAVE_REFRESH' }
   | { type: 'CLICK_ELEMENT', selector: string }
-  | { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: string }
-  | { type: 'WAIT_FOR_ELEMENT', selector: string }
+  | { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: string, timeout?: number }
+  | { type: 'WAIT_FOR_ELEMENT', selector: string, timeout?: number }
   | { type: 'SELECT_AIRBNB_LISTING', listingName: string } // Example, adapt as needed
   | { type: 'TOGGLE_PRICE_TIPS' };
 
