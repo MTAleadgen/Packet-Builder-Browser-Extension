@@ -75,6 +75,18 @@ const getBasePriceInput = async (): Promise<HTMLInputElement> => {
     }
 };
 
+const getSaveRefreshButton = async (): Promise<HTMLElement> => {
+    try {
+        return await waitForElement(
+            'button[data-testid="save-and-refresh-button"], button[data-testid="save-and-refresh"], button[id="save-and-refresh-button"], button[id="save-and-refresh"], button[data-testid="save-refresh-button"], button[id="save-refresh-button"]'
+        ) as HTMLElement;
+    } catch {
+        const btn = Array.from(document.querySelectorAll('button')).find(el => /save\s*&?\s*refresh/i.test(el.textContent || ''));
+        if (btn) return btn as HTMLElement;
+        throw new Error('Save and refresh button not found');
+    }
+};
+
 chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sendResponse) => {
     console.log('Content script received message:', message);
 
@@ -87,10 +99,19 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                 }
                 case 'SET_BASE_PRICE': {
                     const input = await getBasePriceInput();
+
+                    input.click();
+                    input.focus();
+
                     input.value = message.price.toString();
                     // Dispatch events to make sure the web app's framework (e.g., React) picks up the change.
                     input.dispatchEvent(new Event('input', { bubbles: true }));
                     input.dispatchEvent(new Event('change', { bubbles: true }));
+                    return { type: 'SUCCESS' };
+                }
+                case 'CLICK_SAVE_REFRESH': {
+                    const button = await getSaveRefreshButton();
+                    button.click();
                     return { type: 'SUCCESS' };
                 }
                 case 'CLICK_ELEMENT': {

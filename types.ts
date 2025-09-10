@@ -23,6 +23,7 @@ export type Message =
 export type ContentScriptMessage =
   | { type: 'GET_BASE_PRICE' }
   | { type: 'SET_BASE_PRICE', price: number }
+  | { type: 'CLICK_SAVE_REFRESH' }
   | { type: 'CLICK_ELEMENT', selector: string }
   | { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: string }
   | { type: 'WAIT_FOR_ELEMENT', selector: string }
