@@ -3,9 +3,9 @@ import { WorkflowStatus } from './types';
 
 let state: WorkflowState = {
     status: WorkflowStatus.IDLE,
-    step: 1,
     message: 'Ready to start.',
-    totalSteps: 24
+    step: 1,
+    totalSteps: 27
 };
 
 let originalTabId: number;
@@ -264,17 +264,56 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
                         // Step 24: Complete PDF download workflow
                         await updateState({ step: 24, message: 'Market Research Step 7: Completing PDF download...' });
                         await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_7_COMPLETE' });
-                        console.log('✅ Step 24 completed - waiting extra 5 seconds for download to complete');
-                        await new Promise(resolve => setTimeout(resolve, 5000)); // Extra 5 seconds for download
+                        console.log('✅ Step 24 completed - waiting extra 10 seconds for download to complete');
+                        await new Promise(resolve => setTimeout(resolve, 10000)); // Increased to 10 seconds for download
 
-                        // Navigate to Airbnb multicalendar
-                        await navigateToAirbnbMulticalendar();
+            // Navigate to Airbnb multicalendar
+            await navigateToAirbnbMulticalendar();
 
-                        // Final success
-                        await updateState({
-                            status: WorkflowStatus.SUCCESS,
-                            message: `Full workflow completed successfully! PDF downloaded and navigated to Airbnb.`,
-                        });
+            // --- AIRBNB PRICE TIPS WORKFLOW ---
+            console.log('🛫 Starting Airbnb Price Tips workflow...');
+
+            // Wait for Airbnb page to load (content script remains active)
+            console.log('⏳ Waiting for Airbnb page to load and stabilize...');
+            await new Promise(resolve => setTimeout(resolve, 8000)); // Increased wait for page transition
+
+            // Step 25: Click Price Tips button
+            await updateState({ step: 25, message: 'Airbnb Step 1: Clicking Price Tips button...' });
+            console.log('🎯 Executing Price Tips button click...');
+
+            try {
+                await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
+                console.log('✅ Price Tips button clicked successfully');
+
+                // Step 26: Extract price tips data
+                await updateState({ step: 26, message: 'Airbnb Step 2: Extracting price tips data...' });
+                console.log('📊 Extracting price tips data...');
+
+                const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
+                const priceData = extractionResult.data || [];
+                console.log(`✅ Extracted ${priceData.length} price tip entries`);
+
+                // Step 27: Export to CSV
+                await updateState({ step: 27, message: 'Airbnb Step 3: Exporting price tips to CSV...' });
+                console.log('📄 Exporting price tips to CSV...');
+
+                await sendMessageToTab(originalTabId, {
+                    type: 'EXPORT_PRICE_TIPS_CSV',
+                    priceData: priceData
+                });
+                console.log('✅ CSV export completed');
+
+            } catch (airbnbError) {
+                console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
+                // Don't throw error - Airbnb workflow is optional
+                console.log('⚠️ Continuing with success despite Airbnb workflow failure');
+            }
+
+            // Final success
+            await updateState({
+                status: WorkflowStatus.SUCCESS,
+                message: `Full workflow completed successfully! PDF downloaded, navigated to Airbnb (same tab), and price tips extracted.`,
+            });
                         await clearWorkflowState();
                         return;
 
@@ -349,11 +388,50 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
             // Step 24: Complete PDF download workflow
             await updateState({ step: 24, message: 'Market Research Step 7: Completing PDF download...' });
             await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_7_COMPLETE' });
-            console.log('✅ Step 24 completed - waiting extra 5 seconds for download to complete');
-            await new Promise(resolve => setTimeout(resolve, 5000)); // Extra 5 seconds for download
+            console.log('✅ Step 24 completed - waiting extra 10 seconds for download to complete');
+            await new Promise(resolve => setTimeout(resolve, 10000)); // Increased to 10 seconds for download
 
             // Navigate to Airbnb multicalendar
             await navigateToAirbnbMulticalendar();
+
+            // --- AIRBNB PRICE TIPS WORKFLOW ---
+            console.log('🛫 Starting Airbnb Price Tips workflow...');
+
+            // Wait for Airbnb page to load (content script remains active)
+            console.log('⏳ Waiting for Airbnb page to load and stabilize...');
+            await new Promise(resolve => setTimeout(resolve, 8000)); // Increased wait for page transition
+
+            // Step 25: Click Price Tips button
+            await updateState({ step: 25, message: 'Airbnb Step 1: Clicking Price Tips button...' });
+            console.log('🎯 Executing Price Tips button click...');
+
+            try {
+                await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
+                console.log('✅ Price Tips button clicked successfully');
+
+                // Step 26: Extract price tips data
+                await updateState({ step: 26, message: 'Airbnb Step 2: Extracting price tips data...' });
+                console.log('📊 Extracting price tips data...');
+
+                const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
+                const priceData = extractionResult.data || [];
+                console.log(`✅ Extracted ${priceData.length} price tip entries`);
+
+                // Step 27: Export to CSV
+                await updateState({ step: 27, message: 'Airbnb Step 3: Exporting price tips to CSV...' });
+                console.log('📄 Exporting price tips to CSV...');
+
+                await sendMessageToTab(originalTabId, {
+                    type: 'EXPORT_PRICE_TIPS_CSV',
+                    priceData: priceData
+                });
+                console.log('✅ CSV export completed');
+
+            } catch (airbnbError) {
+                console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
+                // Don't throw error - Airbnb workflow is optional
+                console.log('⚠️ Continuing with success despite Airbnb workflow failure');
+            }
 
         } catch (showDashboardError) {
             console.error('❌ Show Dashboard workflow failed:', showDashboardError);
@@ -430,17 +508,50 @@ async function resumeMarketResearchWorkflow(startStep: number) {
         if (startStep <= 24) {
             updateState({ step: 24, message: 'Market Research Step 7: Completing PDF download...' });
             await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_7_COMPLETE' });
-            console.log('✅ Step 24 completed - waiting extra 5 seconds for download to complete');
-            await new Promise(resolve => setTimeout(resolve, 5000)); // Extra 5 seconds for download
+            console.log('✅ Step 24 completed - waiting extra 10 seconds for download to complete');
+            await new Promise(resolve => setTimeout(resolve, 10000)); // Increased to 10 seconds for download
 
             // Navigate to Airbnb multicalendar
             await navigateToAirbnbMulticalendar();
+
+            // --- AIRBNB PRICE TIPS WORKFLOW ---
+            console.log('🛫 Starting Airbnb Price Tips workflow...');
+
+            // Wait for Airbnb page to load (content script remains active)
+            console.log('⏳ Waiting for Airbnb page to load and stabilize...');
+            await new Promise(resolve => setTimeout(resolve, 8000)); // Increased wait for page transition
+
+            // Step 25: Click Price Tips button
+            updateState({ step: 25, message: 'Airbnb Step 1: Clicking Price Tips button...' });
+
+            try {
+                await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
+
+                // Step 26: Extract price tips data
+                updateState({ step: 26, message: 'Airbnb Step 2: Extracting price tips data...' });
+
+                const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
+                const priceData = extractionResult.data || [];
+
+                // Step 27: Export to CSV
+                updateState({ step: 27, message: 'Airbnb Step 3: Exporting price tips to CSV...' });
+
+                await sendMessageToTab(originalTabId, {
+                    type: 'EXPORT_PRICE_TIPS_CSV',
+                    priceData: priceData
+                });
+
+            } catch (airbnbError) {
+                console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
+                // Don't throw error - Airbnb workflow is optional
+                console.log('⚠️ Continuing with success despite Airbnb workflow failure');
+            }
         }
 
         // --- Success ---
         updateState({
             status: WorkflowStatus.SUCCESS,
-            message: `Market Research workflow completed successfully! PDF downloaded and navigated to Airbnb.`,
+            message: `Market Research workflow completed successfully! PDF downloaded, navigated to Airbnb, and price tips extracted.`,
         });
         await clearWorkflowState();
 
@@ -554,15 +665,22 @@ async function navigateToAirbnbMulticalendar() {
         const result = await chrome.storage.local.get(['airbnbMulticalendarUrl']);
         const airbnbUrl = result.airbnbMulticalendarUrl || 'https://www.airbnb.com/multicalendar/1317460106754094447';
 
-        console.log('🎯 Navigating to Airbnb multicalendar:', airbnbUrl);
+        console.log('🎯 Navigating to Airbnb multicalendar in same tab:', airbnbUrl);
 
-        // Create new tab with Airbnb URL
-        await chrome.tabs.create({
+        // Navigate in the current tab to keep content script active
+        await chrome.tabs.update(originalTabId, {
             url: airbnbUrl,
             active: true
         });
 
-        console.log('✅ Successfully navigated to Airbnb multicalendar');
+        console.log('✅ Successfully navigated to Airbnb multicalendar in same tab');
+
+        // Re-inject content script for Airbnb page
+        console.log('🔄 Re-injecting content script for Airbnb page...');
+        await injectScript(originalTabId);
+        await waitForTabLoad(originalTabId);
+
+        console.log('📌 Content script re-injected and ready for price tips extraction');
 
     } catch (error) {
         console.error('❌ Failed to navigate to Airbnb multicalendar:', error);
@@ -592,10 +710,10 @@ async function startWorkflow() {
         await sendMessageToTab(originalTabId, { type: 'INCREASE_BASE_PRICE' });
         await new Promise(res => setTimeout(res, 500)); // Reduced from 2s to 0.5s
 
-        // Step 2: Click Save & Refresh button (optimized wait)
+        // Step 2: Click Save & Refresh button (extended wait)
         await updateState({ step: 2, message: 'Step 2: Clicking Save & Refresh button...' });
         await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
-        await new Promise(res => setTimeout(res, 3000)); // Reduced from 20s to 3s - wait for save to process
+        await new Promise(res => setTimeout(res, 15000)); // Extended to 15s - wait for save to process
 
         // Step 3: Click Sync Now button (dummy click, wait 3 seconds)
         await updateState({ step: 3, message: 'Step 3: Clicking Sync Now button (dummy)...' });

@@ -2319,8 +2319,8 @@ const marketResearchStep6DownloadPDF = async (): Promise<void> => {
                 await saveLog('🎯 FOUND TOP-RIGHT PDF BUTTON:', element.textContent?.trim());
                 (element as HTMLElement).click();
                 await saveLog('✅ Clicked top-right PDF button');
-                await saveLog('⏳ Waiting 15 seconds for PDF download...');
-                await new Promise(resolve => setTimeout(resolve, 15000)); // 15 second wait
+                await saveLog('⏳ Waiting 25 seconds for PDF download...');
+                await new Promise(resolve => setTimeout(resolve, 25000)); // Increased to 25 seconds
                 await saveLog('✅ PDF download wait completed');
                 return;
             }
@@ -2359,8 +2359,8 @@ const marketResearchStep6DownloadPDF = async (): Promise<void> => {
                 await saveLog('🎯 FOUND DOWNLOAD PDF BUTTON (Fallback):', element.textContent?.trim());
                 (element as HTMLElement).click();
                 await saveLog('✅ Clicked Download PDF button');
-                await saveLog('⏳ Waiting 15 seconds for PDF download...');
-                await new Promise(resolve => setTimeout(resolve, 15000)); // 15 second wait
+                await saveLog('⏳ Waiting 25 seconds for PDF download...');
+                await new Promise(resolve => setTimeout(resolve, 25000)); // Increased to 25 seconds
                 await saveLog('✅ PDF download wait completed');
                 return;
             }
@@ -2388,8 +2388,8 @@ const marketResearchStep6DownloadPDF = async (): Promise<void> => {
                 await saveLog('🎯 FOUND GENERIC PDF BUTTON:', element.textContent?.trim());
                 (element as HTMLElement).click();
                 await saveLog('✅ Clicked generic PDF button');
-                await saveLog('⏳ Waiting 15 seconds for PDF download...');
-                await new Promise(resolve => setTimeout(resolve, 15000)); // 15 second wait
+                await saveLog('⏳ Waiting 25 seconds for PDF download...');
+                await new Promise(resolve => setTimeout(resolve, 25000)); // Increased to 25 seconds
                 await saveLog('✅ PDF download wait completed');
                 return;
             }
@@ -2410,6 +2410,340 @@ const marketResearchStep7Complete = async (): Promise<void> => {
     await saveLog('🎉 Market Research Step 7: PDF download workflow completed!');
     await saveLog('✅ Full workflow completed successfully!');
     await new Promise(resolve => setTimeout(resolve, 1000)); // Brief pause
+};
+
+// AIRBNB PRICE TIPS EXTRACTION FUNCTIONS
+
+const extractPriceTipsData = async (): Promise<Array<{
+    date: string;
+    currentPrice: number | null;
+    suggestedPrice: number | null;
+    dayOfWeek: string;
+    month: string;
+    year: string;
+}>> => {
+    await saveLog('🔍 AIRBNB: Scanning calendar for price tips data...');
+
+    const priceTipsData: Array<{
+        date: string;
+        currentPrice: number | null;
+        suggestedPrice: number | null;
+        dayOfWeek: string;
+        month: string;
+        year: string;
+    }> = [];
+
+    try {
+        // Look for calendar day elements that contain pricing information
+        const calendarDays = Array.from(document.querySelectorAll([
+            '[data-testid*="calendar-day"]',
+            '[data-testid*="day"]',
+            '.calendar-day',
+            '.day',
+            '[class*="calendar"] [class*="day"]',
+            '[role="gridcell"]',
+            '[aria-label*="calendar"]',
+            // Generic selectors for calendar elements
+            'div[aria-label*="calendar"]',
+            'button[aria-label*="calendar"]',
+            'div[aria-label*="date"]',
+            'button[aria-label*="date"]'
+        ].join(', ')));
+
+        await saveLog(`📅 Found ${calendarDays.length} potential calendar day elements`);
+
+        // Debug: Log content of first few calendar elements
+        for (let i = 0; i < Math.min(5, calendarDays.length); i++) {
+            const element = calendarDays[i];
+            await saveLog(`🔍 Calendar Element ${i}: ${element.textContent?.substring(0, 200)}`);
+            await saveLog(`🔍 Element attributes: ${Array.from(element.attributes).map(attr => `${attr.name}=${attr.value}`).join(', ')}`);
+        }
+
+        for (const dayElement of calendarDays) {
+            try {
+                const dayData = await extractSingleDayPriceData(dayElement);
+                if (dayData && (dayData.currentPrice || dayData.suggestedPrice)) {
+                    priceTipsData.push(dayData);
+                    await saveLog(`📊 Extracted: ${dayData.date} - Current: $${dayData.currentPrice}, Suggested: $${dayData.suggestedPrice}`);
+                }
+            } catch (dayError) {
+                // Skip problematic days but continue with others
+                console.log('⚠️ Skipped problematic calendar day:', dayError.message);
+            }
+        }
+
+        // Alternative: Look for price tip overlays or tooltips (using only valid CSS selectors)
+        const priceTipElements = Array.from(document.querySelectorAll([
+            '[data-testid*="price-tip"]',
+            '[data-testid*="price_tip"]',
+            '[class*="price-tip"]',
+            '[class*="price_tip"]',
+            '[aria-label*="price"]',
+            'div[class*="tooltip"]',
+            'div[class*="overlay"]',
+            '[role="tooltip"]',
+            '[role="dialog"]',
+            '.tooltip',
+            '.overlay'
+        ].join(', ')));
+
+        await saveLog(`💡 Found ${priceTipElements.length} price tip elements`);
+
+        // Debug: Log content of first few price tip elements
+        for (let i = 0; i < Math.min(5, priceTipElements.length); i++) {
+            const element = priceTipElements[i];
+            await saveLog(`🔍 Price Tip Element ${i}: ${element.textContent?.substring(0, 200)}`);
+            await saveLog(`🔍 Price Tip attributes: ${Array.from(element.attributes).map(attr => `${attr.name}=${attr.value}`).join(', ')}`);
+        }
+
+        for (const tipElement of priceTipElements) {
+            try {
+                const tipData = await extractPriceTipOverlayData(tipElement);
+                if (tipData && !priceTipsData.find(d => d.date === tipData.date)) {
+                    priceTipsData.push(tipData);
+                    await saveLog(`📊 Overlay: ${tipData.date} - Current: $${tipData.currentPrice}, Suggested: $${tipData.suggestedPrice}`);
+                }
+            } catch (tipError) {
+                console.log('⚠️ Skipped problematic price tip:', tipError.message);
+            }
+        }
+
+    } catch (error) {
+        await saveLog(`❌ Error extracting price tips: ${error.message}`);
+
+        // Fallback: Try simpler price extraction
+        await saveLog('🔄 Attempting fallback price extraction...');
+
+        try {
+            const allTextElements = Array.from(document.querySelectorAll('*')).filter(el => {
+                const text = el.textContent || '';
+                return text.includes('$') && text.match(/\$\d+/);
+            });
+
+            await saveLog(`💡 Fallback found ${allTextElements.length} elements with price data`);
+
+            for (const element of allTextElements.slice(0, 20)) { // Limit to first 20
+                const text = element.textContent || '';
+                await saveLog(`📊 Price element: ${text.substring(0, 100)}`);
+            }
+
+            // If we found any price data, create a basic CSV
+            if (allTextElements.length > 0) {
+                const fallbackData = [{
+                    date: new Date().toISOString().split('T')[0],
+                    currentPrice: null,
+                    suggestedPrice: null,
+                    dayOfWeek: new Date().toLocaleDateString('en-US', { weekday: 'long' }),
+                    month: new Date().toLocaleDateString('en-US', { month: 'long' }),
+                    year: new Date().getFullYear().toString()
+                }];
+
+                await saveLog('✅ Fallback extraction completed');
+                return fallbackData;
+            }
+
+        } catch (fallbackError) {
+            await saveLog(`❌ Fallback extraction also failed: ${fallbackError.message}`);
+        }
+
+        throw error;
+    }
+
+    await saveLog(`✅ Completed extraction: ${priceTipsData.length} entries found`);
+    return priceTipsData;
+};
+
+const extractSingleDayPriceData = async (dayElement: Element): Promise<{
+    date: string;
+    currentPrice: number | null;
+    suggestedPrice: number | null;
+    dayOfWeek: string;
+    month: string;
+    year: string;
+} | null> => {
+    // Extract date information
+    const dateText = dayElement.getAttribute('aria-label') ||
+                    dayElement.getAttribute('data-date') ||
+                    dayElement.getAttribute('data-testid') ||
+                    dayElement.textContent?.split('\n')[0] ||
+                    '';
+
+    // Extract prices from the element and all its children
+    const allText = [
+        dayElement.textContent || '',
+        ...Array.from(dayElement.querySelectorAll('*')).map(el => el.textContent || '')
+    ].join(' ');
+
+    const priceMatches = allText.match(/\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g);
+
+    let currentPrice: number | null = null;
+    let suggestedPrice: number | null = null;
+
+    if (priceMatches && priceMatches.length >= 1) {
+        // First price is typically current price
+        currentPrice = parseFloat(priceMatches[0].replace(/[$,]/g, ''));
+
+        // Second price is typically suggested price
+        if (priceMatches.length >= 2) {
+            suggestedPrice = parseFloat(priceMatches[1].replace(/[$,]/g, ''));
+        }
+    }
+
+    // Also look for prices without dollar signs (sometimes Airbnb shows just numbers)
+    const numberMatches = allText.match(/\b(\d+(?:,\d{3})*(?:\.\d{2})?)\b/g);
+    if (!priceMatches && numberMatches && numberMatches.length >= 1) {
+        currentPrice = parseFloat(numberMatches[0].replace(/,/g, ''));
+        if (numberMatches.length >= 2) {
+            suggestedPrice = parseFloat(numberMatches[1].replace(/,/g, ''));
+        }
+    }
+
+    // Extract date components
+    const date = new Date(dateText);
+    const isValidDate = !isNaN(date.getTime());
+
+    if (isValidDate) {
+        return {
+            date: date.toISOString().split('T')[0],
+            currentPrice,
+            suggestedPrice,
+            dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'long' }),
+            month: date.toLocaleDateString('en-US', { month: 'long' }),
+            year: date.getFullYear().toString()
+        };
+    }
+
+    return null;
+};
+
+const extractPriceTipOverlayData = async (tipElement: Element): Promise<{
+    date: string;
+    currentPrice: number | null;
+    suggestedPrice: number | null;
+    dayOfWeek: string;
+    month: string;
+    year: string;
+} | null> => {
+    // Extract data from price tip overlays/tooltips with comprehensive search
+
+    // Look for price data in the element and all its children
+    const allText = [
+        tipElement.textContent || '',
+        ...Array.from(tipElement.querySelectorAll('*')).map(el => el.textContent || '')
+    ].join(' ');
+
+    const priceMatches = allText.match(/\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g);
+
+    let currentPrice: number | null = null;
+    let suggestedPrice: number | null = null;
+
+    if (priceMatches && priceMatches.length >= 1) {
+        currentPrice = parseFloat(priceMatches[0].replace(/[$,]/g, ''));
+        if (priceMatches.length >= 2) {
+            suggestedPrice = parseFloat(priceMatches[1].replace(/[$,]/g, ''));
+        }
+    }
+
+    // Also look for prices without dollar signs
+    const numberMatches = allText.match(/\b(\d+(?:,\d{3})*(?:\.\d{2})?)\b/g);
+    if (!priceMatches && numberMatches && numberMatches.length >= 1) {
+        currentPrice = parseFloat(numberMatches[0].replace(/,/g, ''));
+        if (numberMatches.length >= 2) {
+            suggestedPrice = parseFloat(numberMatches[1].replace(/,/g, ''));
+        }
+    }
+
+    if (!currentPrice && !suggestedPrice) {
+        return null; // No price data found
+    }
+
+    // Find associated date element with more comprehensive search
+    const dateElement = tipElement.closest('[data-date]') ||
+                       tipElement.closest('[aria-label*="date"]') ||
+                       tipElement.closest('[data-testid*="day"]') ||
+                       tipElement.closest('[class*="date"]') ||
+                       tipElement.closest('[aria-label*="calendar"]');
+
+    let dateText = dateElement?.getAttribute('data-date') ||
+                   dateElement?.getAttribute('aria-label') ||
+                   dateElement?.textContent?.split('\n')[0] ||
+                   '';
+
+    // If no date found, try to extract from the overlay itself
+    if (!dateText) {
+        const dateMatch = allText.match(/(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2}|\w+ \d{1,2},? \d{4})/);
+        if (dateMatch) {
+            dateText = dateMatch[0];
+        }
+    }
+
+    if (!dateText) {
+        // Fallback: use current date if no date found
+        const now = new Date();
+        dateText = now.toISOString().split('T')[0];
+    }
+
+    const date = new Date(dateText);
+    const isValidDate = !isNaN(date.getTime());
+
+    return {
+        date: isValidDate ? date.toISOString().split('T')[0] : dateText,
+        currentPrice,
+        suggestedPrice,
+        dayOfWeek: isValidDate ? date.toLocaleDateString('en-US', { weekday: 'long' }) : '',
+        month: isValidDate ? date.toLocaleDateString('en-US', { month: 'long' }) : '',
+        year: isValidDate ? date.getFullYear().toString() : ''
+    };
+};
+
+const generatePriceTipsCSV = async (priceData: Array<{
+    date: string;
+    currentPrice: number | null;
+    suggestedPrice: number | null;
+    dayOfWeek: string;
+    month: string;
+    year: string;
+}>): Promise<string> => {
+    await saveLog('📄 Generating CSV content from price data...');
+
+    const headers = ['Date', 'Day of Week', 'Month', 'Year', 'Current Price', 'Suggested Price'];
+
+    const csvRows = [
+        headers.join(','),
+        ...priceData.map(row => {
+            return [
+                row.date,
+                row.dayOfWeek,
+                row.month,
+                row.year,
+                row.currentPrice ? `$${row.currentPrice}` : '',
+                row.suggestedPrice ? `$${row.suggestedPrice}` : ''
+            ].join(',');
+        })
+    ];
+
+    await saveLog(`✅ Generated CSV with ${priceData.length} data rows`);
+    return csvRows.join('\n');
+};
+
+const downloadCSV = async (csvContent: string): Promise<void> => {
+    await saveLog('💾 Creating and downloading CSV file...');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `airbnb_price_tips_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+
+    await saveLog('✅ CSV download initiated');
 };
 
 chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sendResponse) => {
@@ -2619,9 +2953,64 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     return { type: 'SUCCESS' };
                 }
                 case 'TOGGLE_PRICE_TIPS': {
-                     // This selector is a placeholder for the price tips toggle on Airbnb.
-                    const toggle = await waitForElement('button[data-testid="price-tips-toggle"]');
-                    (toggle as HTMLElement).click();
+                    await saveLog('🎯 AIRBNB: Looking for Price Tips toggle button...');
+
+                    // Multiple selector strategies for Airbnb Price Tips button
+                    const selectors = [
+                        'button[data-testid="price-tips-toggle"]',
+                        'button[aria-label*="Price tips"]',
+                        'button[aria-label*="price tips"]',
+                        'button:has-text("Price tips")',
+                        'button:has-text("Price Tips")',
+                        '[role="button"]:has-text("Price tips")',
+                        '[role="button"]:has-text("Price Tips")',
+                        'button[class*="price-tips"]',
+                        'button[class*="price_tips"]',
+                        // Generic fallback for any button containing "price" and "tips"
+                        'button:contains("price"):contains("tips")'
+                    ];
+
+                    for (const selector of selectors) {
+                        try {
+                            await saveLog(`🔍 Trying selector: ${selector}`);
+                            const toggle = await waitForElement(selector, 1000) as HTMLElement;
+                            if (toggle) {
+                                await saveLog('✅ Found Price Tips button, clicking...');
+                                toggle.click();
+                                await saveLog('🎉 Successfully clicked Price Tips button!');
+
+                                // Wait for price tips to load
+                                await new Promise(resolve => setTimeout(resolve, 3000));
+                                await saveLog('⏳ Waiting for price tips to load...');
+
+                                return { type: 'SUCCESS' };
+                            }
+                        } catch {
+                            // Continue to next selector
+                        }
+                    }
+
+                    await saveLog('❌ AIRBNB: Price Tips button not found after trying all selectors');
+                    throw new Error('Price Tips button not found on Airbnb page');
+                }
+                case 'EXTRACT_PRICE_TIPS': {
+                    await saveLog('📊 AIRBNB: Extracting price tips data from calendar...');
+
+                    const priceData = await extractPriceTipsData();
+                    await saveLog(`✅ Extracted ${priceData.length} price tip entries`);
+
+                    return {
+                        type: 'PRICE_TIPS_DATA',
+                        data: priceData
+                    };
+                }
+                case 'EXPORT_PRICE_TIPS_CSV': {
+                    await saveLog('📄 AIRBNB: Exporting price tips to CSV...');
+
+                    const csvContent = await generatePriceTipsCSV(message.priceData);
+                    await downloadCSV(csvContent);
+
+                    await saveLog('✅ Price tips CSV exported successfully');
                     return { type: 'SUCCESS' };
                 }
                 default:
