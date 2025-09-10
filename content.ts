@@ -62,6 +62,19 @@ const waitForElementToDisappear = (selector: string, timeout = 10000): Promise<v
     });
 };
 
+const getBasePriceInput = async (): Promise<HTMLInputElement> => {
+    try {
+        return await waitForElement(
+            'input[data-testid="base-price-input"], input[name="basePrice"], input[id="basePrice"], input[name="base_price"], input[id="base_price"]'
+        ) as HTMLInputElement;
+    } catch {
+        const label = Array.from(document.querySelectorAll('label')).find(el => /base price/i.test(el.textContent || ''));
+        const input = label?.closest('div')?.querySelector('input');
+        if (input) return input as HTMLInputElement;
+        throw new Error('Base price input not found');
+    }
+};
+
 chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sendResponse) => {
     console.log('Content script received message:', message);
 
@@ -69,12 +82,11 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
         try {
             switch (message.type) {
                 case 'GET_BASE_PRICE': {
-                    // This selector is a placeholder. You must find the correct one on PriceLabs.
-                    const input = await waitForElement('input[data-testid="base-price-input"]') as HTMLInputElement;
+                    const input = await getBasePriceInput();
                     return { type: 'BASE_PRICE_RESPONSE', price: parseFloat(input.value) };
                 }
                 case 'SET_BASE_PRICE': {
-                    const input = await waitForElement('input[data-testid="base-price-input"]') as HTMLInputElement;
+                    const input = await getBasePriceInput();
                     input.value = message.price.toString();
                     // Dispatch events to make sure the web app's framework (e.g., React) picks up the change.
                     input.dispatchEvent(new Event('input', { bubbles: true }));
