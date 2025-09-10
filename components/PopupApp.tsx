@@ -23,6 +23,7 @@ export const PopupApp: React.FC = () => {
   const [showLogs, setShowLogs] = useState<boolean>(false);
   const [persistentLogs, setPersistentLogs] = useState<any[]>([]);
   const [showPersistentLogs, setShowPersistentLogs] = useState<boolean>(false);
+  const [airbnbUrl, setAirbnbUrl] = useState<string>('https://www.airbnb.com/multicalendar/1317460106754094447');
 
   const addLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -38,28 +39,35 @@ export const PopupApp: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // Load Airbnb URL from storage
+    chrome.storage.local.get(['airbnbMulticalendarUrl'], (result) => {
+      if (result.airbnbMulticalendarUrl) {
+        setAirbnbUrl(result.airbnbMulticalendarUrl);
+      }
+    });
+
     // Check if on a valid PriceLabs page
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const currentTab = tabs[0];
       const url = currentTab?.url ?? '';
-      
+
       console.log('🔍 POPUP DEBUG: Current URL:', url);
       console.log('🔍 POPUP DEBUG: Tab ID:', currentTab?.id);
       console.log('🔍 POPUP DEBUG: Tab title:', currentTab?.title);
-      
+
       setCurrentUrl(url);
-      
+
       const isPricingPage = url.includes('app.pricelabs.co/pricing?listings=');
       const isCustomPage = url.includes('app.pricelabs.co/customization');
       const isReportsPage = url.includes('app.pricelabs.co/reports');
-      
+
       // Also check if we're on a PriceLabs domain but potentially redirected to login
       const isPriceLabsDomain = url.includes('app.pricelabs.co');
       const isLoginPage = url.includes('/login') || currentTab?.title?.toLowerCase().includes('login');
-      
+
       console.log('🔍 POPUP DEBUG: Domain check:', { isPriceLabsDomain, isLoginPage });
       console.log('🔍 POPUP DEBUG: URL Analysis:', { isPricingPage, isCustomPage, isReportsPage });
-      
+
       if (isPricingPage || isCustomPage || isReportsPage) {
         setIsPriceLabsPage(true);
         console.log('✅ POPUP DEBUG: Valid PriceLabs page detected');
@@ -70,17 +78,17 @@ export const PopupApp: React.FC = () => {
       } else {
         console.log('❌ POPUP DEBUG: Not a valid PriceLabs page');
       }
-      
+
       if (isCustomPage) {
         setIsCustomizationPage(true);
         console.log('✅ POPUP DEBUG: Customization page - Resume Customizations button enabled');
       }
-      
+
       if (isReportsPage) {
         setIsCustomizationPage(true); // Reuse the same state for showing resume button
         console.log('✅ POPUP DEBUG: Reports page - Resume Market Research button enabled');
       }
-      
+
       setIsLoading(false);
       console.log('🔄 POPUP DEBUG: PopupApp initialization complete');
     });
@@ -141,6 +149,15 @@ export const PopupApp: React.FC = () => {
       console.error('Failed to clear persistent logs:', error);
     }
   }, []);
+
+  const saveAirbnbUrl = useCallback(async () => {
+    try {
+      await chrome.storage.local.set({ airbnbMulticalendarUrl: airbnbUrl });
+      console.log('💾 Saved Airbnb multicalendar URL:', airbnbUrl);
+    } catch (error) {
+      console.error('Failed to save Airbnb URL:', error);
+    }
+  }, [airbnbUrl]);
 
   const renderContent = () => {
     if (isLoading) {
@@ -223,6 +240,25 @@ export const PopupApp: React.FC = () => {
               URL: {currentUrl}
               <br />
               Customization Page: {isCustomizationPage ? '✅ Yes' : '❌ No'}
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <label className="block text-xs font-medium text-gray-300">
+                Airbnb Multicalendar URL:
+              </label>
+              <input
+                type="text"
+                value={airbnbUrl}
+                onChange={(e) => setAirbnbUrl(e.target.value)}
+                placeholder="https://www.airbnb.com/multicalendar/..."
+                className="w-full px-3 py-2 text-xs bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                onClick={saveAirbnbUrl}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-1 px-3 rounded transition-all duration-300"
+              >
+                💾 Save Airbnb URL
+              </button>
             </div>
             <div className="space-y-2 mt-4">
               <button

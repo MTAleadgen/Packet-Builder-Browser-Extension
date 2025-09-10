@@ -264,11 +264,16 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
                         // Step 24: Complete PDF download workflow
                         await updateState({ step: 24, message: 'Market Research Step 7: Completing PDF download...' });
                         await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_7_COMPLETE' });
+                        console.log('✅ Step 24 completed - waiting extra 5 seconds for download to complete');
+                        await new Promise(resolve => setTimeout(resolve, 5000)); // Extra 5 seconds for download
+
+                        // Navigate to Airbnb multicalendar
+                        await navigateToAirbnbMulticalendar();
 
                         // Final success
                         await updateState({
                             status: WorkflowStatus.SUCCESS,
-                            message: `Full workflow completed successfully! PDF downloaded.`,
+                            message: `Full workflow completed successfully! PDF downloaded and navigated to Airbnb.`,
                         });
                         await clearWorkflowState();
                         return;
@@ -344,7 +349,11 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
             // Step 24: Complete PDF download workflow
             await updateState({ step: 24, message: 'Market Research Step 7: Completing PDF download...' });
             await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_7_COMPLETE' });
-            console.log('✅ Step 24 completed');
+            console.log('✅ Step 24 completed - waiting extra 5 seconds for download to complete');
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Extra 5 seconds for download
+
+            // Navigate to Airbnb multicalendar
+            await navigateToAirbnbMulticalendar();
 
         } catch (showDashboardError) {
             console.error('❌ Show Dashboard workflow failed:', showDashboardError);
@@ -421,12 +430,17 @@ async function resumeMarketResearchWorkflow(startStep: number) {
         if (startStep <= 24) {
             updateState({ step: 24, message: 'Market Research Step 7: Completing PDF download...' });
             await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_7_COMPLETE' });
+            console.log('✅ Step 24 completed - waiting extra 5 seconds for download to complete');
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Extra 5 seconds for download
+
+            // Navigate to Airbnb multicalendar
+            await navigateToAirbnbMulticalendar();
         }
 
         // --- Success ---
         updateState({
             status: WorkflowStatus.SUCCESS,
-            message: `Market Research workflow completed successfully! PDF downloaded.`,
+            message: `Market Research workflow completed successfully! PDF downloaded and navigated to Airbnb.`,
         });
         await clearWorkflowState();
 
@@ -530,6 +544,30 @@ async function waitForTabLoad(tabId: number): Promise<void> {
 async function startWorkflowFromStep(startStep: number) {
     // Placeholder for full workflow resume - not implemented yet
     throw new Error('Full workflow resume not implemented yet. Please start from a supported page.');
+}
+
+async function navigateToAirbnbMulticalendar() {
+    console.log('🛫 Starting Airbnb multicalendar navigation...');
+
+    try {
+        // Get the Airbnb URL from storage, default to hardcoded value
+        const result = await chrome.storage.local.get(['airbnbMulticalendarUrl']);
+        const airbnbUrl = result.airbnbMulticalendarUrl || 'https://www.airbnb.com/multicalendar/1317460106754094447';
+
+        console.log('🎯 Navigating to Airbnb multicalendar:', airbnbUrl);
+
+        // Create new tab with Airbnb URL
+        await chrome.tabs.create({
+            url: airbnbUrl,
+            active: true
+        });
+
+        console.log('✅ Successfully navigated to Airbnb multicalendar');
+
+    } catch (error) {
+        console.error('❌ Failed to navigate to Airbnb multicalendar:', error);
+        // Don't throw error - this shouldn't stop the workflow success
+    }
 }
 
 async function startWorkflow() {
