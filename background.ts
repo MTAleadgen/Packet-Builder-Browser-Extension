@@ -71,11 +71,12 @@ async function startWorkflow() {
     try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         const url = tab?.url ?? '';
-        if (!tab || !tab.id || !(url.includes('app.pricelabs.co') && url.includes('/listing'))) {
-            throw new Error("Not on a valid PriceLabs listing page.");
+        if (!tab || !tab.id || !url.includes('app.pricelabs.co/pricing?listings=')) {
+            throw new Error("Not on a valid PriceLabs pricing page.");
         }
         originalTabId = tab.id;
-        listingId = url.split('listing/')[1].split('/')[0];
+        const urlObj = new URL(url);
+        listingId = urlObj.searchParams.get('listings');
 
         // Step 1: Read and store original price
         updateState({ status: WorkflowStatus.RUNNING, step: 1, message: 'Reading original base price...' });
