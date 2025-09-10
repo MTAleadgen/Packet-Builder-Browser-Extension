@@ -96,7 +96,9 @@ async function startWorkflow() {
         // Step 2: Increase price, save, and sync
         updateState({ step: 2, message: 'Increasing base price and syncing...' });
         const newPrice = originalBasePrice + 100;
+
         console.log(`Updating base price from ${originalBasePrice} to ${newPrice}`);
+
 
         await sendMessageToTab(originalTabId, { type: 'SET_BASE_PRICE', price: newPrice });
         // Allow UI to register the change before proceeding.
@@ -105,7 +107,9 @@ async function startWorkflow() {
             originalTabId,
             { type: 'GET_BASE_PRICE' }
         );
+
         console.log('Verified base price after update:', verify.price);
+
         if (verify.price !== newPrice) {
             throw new Error(`Base price did not update to ${newPrice}, found ${verify.price}`);
         }
@@ -116,7 +120,9 @@ async function startWorkflow() {
         const SYNC_TOAST_SELECTOR = 'div[data-testid="sync-success-toast"]';
 
         await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
+
         await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR, timeout: 12000 });
+
         await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SYNC_NOW_SELECTOR });
 
         await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT', selector: SYNC_TOAST_SELECTOR, timeout: 12000 });
@@ -179,7 +185,9 @@ async function startWorkflow() {
 
         await sendMessageToTab(originalTabId, { type: 'SET_BASE_PRICE', price: priceToRevert });
         await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
+
         await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR, timeout: 12000 });
+
         await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SYNC_NOW_SELECTOR });
         await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT', selector: SYNC_TOAST_SELECTOR, timeout: 12000 });
         await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: SYNC_TOAST_SELECTOR, timeout: 12000 });

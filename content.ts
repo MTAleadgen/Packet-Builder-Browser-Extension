@@ -95,6 +95,7 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
             switch (message.type) {
                 case 'GET_BASE_PRICE': {
                     const input = await getBasePriceInput();
+
                     const raw = input.value;
                     const price = parseFloat(raw.replace(/[^0-9.-]/g, ''));
                     console.log('Base price field raw value:', raw, 'parsed:', price);
@@ -108,6 +109,7 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     console.log('Setting base price to', message.price);
                     input.click();
                     input.focus();
+
                     input.value = message.price.toString();
                     // Dispatch events to make sure the web app's framework (e.g., React) picks up the change.
                     input.dispatchEvent(new Event('input', { bubbles: true }));
