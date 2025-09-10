@@ -18,12 +18,34 @@ export type Message =
   | { type: 'CANCEL_GATHERING' }
   | { type: 'RESET_WORKFLOW' }
   | { type: 'GET_WORKFLOW_STATE' }
+  | { type: 'RESUME_WORKFLOW', fromStep?: number, customizationsOnly?: boolean }
   | { type: 'WORKFLOW_STATE_UPDATE', payload: WorkflowState };
 
 export type ContentScriptMessage =
   | { type: 'GET_BASE_PRICE' }
   | { type: 'SET_BASE_PRICE', price: number }
   | { type: 'CLICK_SAVE_REFRESH' }
+  | { type: 'CLICK_SYNC_NOW' }
+  | { type: 'OCCUPANCY_STEP_1_EDIT' }
+  | { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' }
+  | { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' }
+  | { type: 'OCCUPANCY_STEP_4_DOWNLOAD' }
+  | { type: 'OCCUPANCY_STEP_5_CLOSE_POPUP' }
+  | { type: 'OCCUPANCY_STEP_6_COMPLETE' }
+  | { type: 'NAVIGATION_STEP_1_DYNAMIC_PRICING' }
+  | { type: 'NAVIGATION_STEP_2_CUSTOMIZATIONS' }
+  | { type: 'NAVIGATION_STEP_3_COMPLETE' }
+  | { type: 'CUSTOMIZATIONS_STEP_1_LISTINGS' }
+  | { type: 'CUSTOMIZATIONS_STEP_2_TABLE_VIEW' }
+  | { type: 'CUSTOMIZATIONS_STEP_3_DOWNLOAD_ALL' }
+  | { type: 'CUSTOMIZATIONS_STEP_4_COMPLETE' }
+  | { type: 'MARKET_RESEARCH_STEP_1_DROPDOWN' }
+  | { type: 'MARKET_RESEARCH_STEP_2_MARKET_DASHBOARD' }
+  | { type: 'MARKET_RESEARCH_STEP_3_COMPLETE' }
+  | { type: 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD' }
+  | { type: 'MARKET_RESEARCH_STEP_5_COMPLETE' }
+  | { type: 'MARKET_RESEARCH_STEP_6_DOWNLOAD_PDF' }
+  | { type: 'MARKET_RESEARCH_STEP_7_COMPLETE' }
   | { type: 'CLICK_ELEMENT', selector: string }
   | { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: string, timeout?: number }
   | { type: 'WAIT_FOR_ELEMENT', selector: string, timeout?: number }

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Pricing Co-Pilot",
   "version": "1.0",
-  "description": "Automates weekly data gathering from PriceLabs and Airbnb.",
+  "description": "Automates PriceLabs pricing workflow: increase base price, save & refresh, and sync.",
   "permissions": [
     "storage",
     "tabs",
