@@ -95,11 +95,18 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
             switch (message.type) {
                 case 'GET_BASE_PRICE': {
                     const input = await getBasePriceInput();
-                    return { type: 'BASE_PRICE_RESPONSE', price: parseFloat(input.value) };
+
+                    const raw = input.value;
+                    const price = parseFloat(raw.replace(/[^0-9.-]/g, ''));
+                    console.log('Base price field raw value:', raw, 'parsed:', price);
+                    if (isNaN(price)) {
+                        throw new Error(`Could not parse base price from value "${raw}"`);
+                    }
+                    return { type: 'BASE_PRICE_RESPONSE', price };
                 }
                 case 'SET_BASE_PRICE': {
                     const input = await getBasePriceInput();
-
+                    console.log('Setting base price to', message.price);
                     input.click();
                     input.focus();
 

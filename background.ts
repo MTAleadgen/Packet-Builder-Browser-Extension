@@ -87,11 +87,18 @@ async function startWorkflow() {
             { type: 'GET_BASE_PRICE' }
         );
         originalBasePrice = priceResponse.price;
+        console.log('Original base price:', originalBasePrice);
+        if (typeof originalBasePrice !== 'number' || isNaN(originalBasePrice)) {
+            throw new Error(`Received invalid base price: ${originalBasePrice}`);
+        }
         await chrome.storage.local.set({ originalBasePrice });
 
         // Step 2: Increase price, save, and sync
         updateState({ step: 2, message: 'Increasing base price and syncing...' });
         const newPrice = originalBasePrice + 100;
+
+        console.log(`Updating base price from ${originalBasePrice} to ${newPrice}`);
+
 
         await sendMessageToTab(originalTabId, { type: 'SET_BASE_PRICE', price: newPrice });
         // Allow UI to register the change before proceeding.
@@ -100,6 +107,9 @@ async function startWorkflow() {
             originalTabId,
             { type: 'GET_BASE_PRICE' }
         );
+
+        console.log('Verified base price after update:', verify.price);
+
         if (verify.price !== newPrice) {
             throw new Error(`Base price did not update to ${newPrice}, found ${verify.price}`);
         }
