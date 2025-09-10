@@ -120,11 +120,11 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     return { type: 'SUCCESS' };
                 }
                 case 'WAIT_FOR_ELEMENT_TO_DISAPPEAR': {
-                    await waitForElementToDisappear(message.selector);
+                    await waitForElementToDisappear(message.selector, message.timeout);
                     return { type: 'SUCCESS' };
                 }
                 case 'WAIT_FOR_ELEMENT': {
-                    await waitForElement(message.selector);
+                    await waitForElement(message.selector, message.timeout);
                     return { type: 'SUCCESS' };
                 }
                 case 'SELECT_AIRBNB_LISTING': {
