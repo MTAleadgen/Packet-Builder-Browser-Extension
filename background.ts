@@ -71,11 +71,12 @@ async function startWorkflow() {
     try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         const url = tab?.url ?? '';
-        if (!tab || !tab.id || !(url.includes('app.pricelabs.co') && url.includes('/listing'))) {
-            throw new Error("Not on a valid PriceLabs listing page.");
+        if (!tab || !tab.id || !url.includes('app.pricelabs.co/pricing?listings=')) {
+            throw new Error("Not on a valid PriceLabs pricing page.");
         }
         originalTabId = tab.id;
-        listingId = url.split('listing/')[1].split('/')[0];
+        const urlObj = new URL(url);
+        listingId = urlObj.searchParams.get('listings');
 
         // Step 1: Read and store original price
         updateState({ status: WorkflowStatus.RUNNING, step: 1, message: 'Reading original base price...' });
@@ -86,26 +87,40 @@ async function startWorkflow() {
             { type: 'GET_BASE_PRICE' }
         );
         originalBasePrice = priceResponse.price;
+        console.log('Original base price:', originalBasePrice);
+        if (typeof originalBasePrice !== 'number' || isNaN(originalBasePrice)) {
+            throw new Error(`Received invalid base price: ${originalBasePrice}`);
+        }
         await chrome.storage.local.set({ originalBasePrice });
 
         // Step 2: Increase price, save, and sync
         updateState({ step: 2, message: 'Increasing base price and syncing...' });
         const newPrice = originalBasePrice + 100;
-        
-        await sendMessageToTab(originalTabId, { type: 'SET_BASE_PRICE', price: newPrice });
+        console.log(`Updating base price from ${originalBasePrice} to ${newPrice}`);
 
-        // IMPORTANT: The following selectors are placeholders for PriceLabs.
-        const SAVE_REFRESH_SELECTOR = 'button[data-testid="save-and-refresh-button"]';
+        await sendMessageToTab(originalTabId, { type: 'SET_BASE_PRICE', price: newPrice });
+        // Allow UI to register the change before proceeding.
+        await new Promise(res => setTimeout(res, 500));
+        const verify = await sendMessageToTab<{ type: 'BASE_PRICE_RESPONSE', price: number }>(
+            originalTabId,
+            { type: 'GET_BASE_PRICE' }
+        );
+        console.log('Verified base price after update:', verify.price);
+        if (verify.price !== newPrice) {
+            throw new Error(`Base price did not update to ${newPrice}, found ${verify.price}`);
+        }
+
+        // IMPORTANT: The following selectors are placeholders for PriceLabs except for the save/refresh action.
         const LOADING_OVERLAY_SELECTOR = 'div[data-testid="loading-spinner-overlay"]';
         const SYNC_NOW_SELECTOR = 'button[data-testid="sync-now-button"]';
         const SYNC_TOAST_SELECTOR = 'div[data-testid="sync-success-toast"]';
 
-        await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SAVE_REFRESH_SELECTOR });
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR });
+        await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR, timeout: 12000 });
         await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SYNC_NOW_SELECTOR });
-        
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT', selector: SYNC_TOAST_SELECTOR });
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: SYNC_TOAST_SELECTOR });
+
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT', selector: SYNC_TOAST_SELECTOR, timeout: 12000 });
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: SYNC_TOAST_SELECTOR, timeout: 12000 });
         
         // --- Step 3: Airbnb Screenshot ---
         updateState({ step: 3, message: 'Opening Airbnb calendar...' });
@@ -163,11 +178,11 @@ async function startWorkflow() {
         }
 
         await sendMessageToTab(originalTabId, { type: 'SET_BASE_PRICE', price: priceToRevert });
-        await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SAVE_REFRESH_SELECTOR });
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR });
+        await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR, timeout: 12000 });
         await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SYNC_NOW_SELECTOR });
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT', selector: SYNC_TOAST_SELECTOR });
-        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: SYNC_TOAST_SELECTOR });
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT', selector: SYNC_TOAST_SELECTOR, timeout: 12000 });
+        await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: SYNC_TOAST_SELECTOR, timeout: 12000 });
         
         // --- Step 8: Package and Finalize ---
         updateState({ step: 8, message: 'Packaging files into a .zip archive...' });
