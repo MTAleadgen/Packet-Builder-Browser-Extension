@@ -82,6 +82,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 step: 1
             });
             break;
+        case 'START_WORKFLOW_WITH_PAIRS': {
+            const selectedPairs = message.selectedPairs as Array<{ priceLabsUrl: string; airbnbUrl: string }>;
+            console.log('🚀 Starting workflow with selected pairs:', selectedPairs);
+            if (!selectedPairs || selectedPairs.length === 0) {
+                updateState({ status: WorkflowStatus.ERROR, message: 'No link pairs selected' });
+                break;
+            }
+            const selectedPair = selectedPairs[0];
+            if (!selectedPair.priceLabsUrl) {
+                updateState({ status: WorkflowStatus.ERROR, message: 'PriceLabs URL is required' });
+                break;
+            }
+            chrome.storage.local.set({ selectedPair });
+            startWorkflowWithPair(selectedPair.priceLabsUrl, selectedPair.airbnbUrl);
+            break;
+        }
     }
 });
 
@@ -302,6 +318,7 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
                     priceData: priceData
                 });
                 console.log('✅ CSV export completed');
+                await navigateBackToPriceLabsIfPairStored();
 
             } catch (airbnbError) {
                 console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
@@ -425,7 +442,7 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
                     type: 'EXPORT_PRICE_TIPS_CSV',
                     priceData: priceData
                 });
-                console.log('✅ CSV export completed');
+                await navigateBackToPriceLabsIfPairStored();
 
             } catch (airbnbError) {
                 console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
@@ -467,10 +484,19 @@ async function resumeMarketResearchWorkflow(startStep: number) {
         console.log('🔍 Current tab title:', tabTitle);
         
         // Detect if user got redirected to login
-        if (currentUrl.includes('/login') || 
-            !currentUrl.includes('/reports') || 
-            tabTitle.toLowerCase().includes('login')) {
+        if (currentUrl.includes('/login') || tabTitle.toLowerCase().includes('login')) {
             throw new Error(`❌ Login required. Current URL: ${currentUrl}. Please log in to PriceLabs first, then navigate to Market Dashboard and try again.`);
+        }
+
+        // If we're not on reports page, check if we're on a valid PriceLabs page (pricing/customization)
+        // This can happen in pairs workflow where we start from pricing page
+        if (!currentUrl.includes('/reports')) {
+            if (currentUrl.includes('/pricing?listings=') || currentUrl.includes('/customization')) {
+                console.log('ℹ️ Not on reports page, but on valid PriceLabs page. Continuing workflow...');
+            } else {
+                console.log('⚠️ Not on expected PriceLabs page. Current URL:', currentUrl);
+                throw new Error(`❌ Unexpected page. Current URL: ${currentUrl}. Expected PriceLabs pricing or reports page.`);
+            }
         }
         
         // Ensure we're on the reports page and inject content script
@@ -540,6 +566,7 @@ async function resumeMarketResearchWorkflow(startStep: number) {
                     type: 'EXPORT_PRICE_TIPS_CSV',
                     priceData: priceData
                 });
+                await navigateBackToPriceLabsIfPairStored();
 
             } catch (airbnbError) {
                 console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
@@ -794,5 +821,95 @@ async function startWorkflow() {
             status: WorkflowStatus.ERROR,
             message: `Error at step ${state.step}: ${error instanceof Error ? error.message : 'Unknown error'}`,
         });
+    }
+}
+
+async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
+    if (state.status === WorkflowStatus.RUNNING) return;
+    try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab || !tab.id) throw new Error('No active tab found.');
+        originalTabId = tab.id;
+
+        await updateState({ status: WorkflowStatus.RUNNING, step: 1, message: 'Navigating to PriceLabs URL...' });
+        console.log('🌐 Navigating to PriceLabs URL:', priceLabsUrl);
+        await chrome.tabs.update(originalTabId, { url: priceLabsUrl });
+
+        console.log('⏳ Waiting 5 seconds for PriceLabs page to load...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        await injectScript(originalTabId);
+        await waitForTabLoad(originalTabId);
+
+        // Proceed with normal workflow from Step 1
+        await updateState({ step: 1, message: 'Step 1: Increasing base price by $100...' });
+        await sendMessageToTab(originalTabId, { type: 'INCREASE_BASE_PRICE' });
+        await new Promise(res => setTimeout(res, 500));
+
+        // Step 2: Save & Refresh (extended wait)
+        await updateState({ step: 2, message: 'Step 2: Clicking Save & Refresh button...' });
+        await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
+        await new Promise(res => setTimeout(res, 15000));
+
+        // Continue full workflow
+        await proceedAfterInitialSteps();
+
+        // After CSV export in existing flow, navigate back handled elsewhere
+    } catch (error) {
+        console.error('❌ Error in startWorkflowWithPair:', error);
+        await updateState({ status: WorkflowStatus.ERROR, message: error instanceof Error ? error.message : 'Unknown error' });
+    }
+}
+
+async function proceedAfterInitialSteps() {
+    // Mirror the existing main flow from Step 3 onward
+    await updateState({ step: 3, message: 'Step 3: Clicking Sync Now button (dummy)...' });
+    await sendMessageToTab(originalTabId, { type: 'DUMMY_SYNC_CLICK' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    await updateState({ step: 4, message: 'Step 4: Clicking Edit button...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_1_EDIT' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    await updateState({ step: 5, message: 'Step 5: Scrolling and clicking Edit Profile...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    await updateState({ step: 6, message: 'Step 6: Clicking Edit Profile button in popup...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    await updateState({ step: 7, message: 'Step 7: Clicking Download button...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_4_DOWNLOAD' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    await updateState({ step: 8, message: 'Step 8: Closing popup...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_5_CLOSE_POPUP' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    await updateState({ step: 9, message: 'Step 9: Clicking Dynamic Pricing dropdown...' });
+    await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_1_DYNAMIC_PRICING' });
+    await new Promise(res => setTimeout(res, 3000));
+
+    // Continue from Market Research workflow within the same tab
+    await resumeMarketResearchWorkflow(21);
+}
+
+async function navigateBackToPriceLabsIfPairStored() {
+    try {
+        const result = await chrome.storage.local.get(['selectedPair']);
+        const priceLabsUrl = result.selectedPair?.priceLabsUrl;
+        if (!priceLabsUrl) {
+            console.log('ℹ️ No stored PriceLabs URL to navigate back to.');
+            return;
+        }
+        console.log('🔙 Navigating back to PriceLabs URL:', priceLabsUrl);
+        await chrome.tabs.update(originalTabId, { url: priceLabsUrl, active: true });
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        await injectScript(originalTabId);
+        await waitForTabLoad(originalTabId);
+        console.log('✅ Back on PriceLabs page');
+    } catch (e) {
+        console.error('Failed to navigate back to PriceLabs:', e);
     }
 }

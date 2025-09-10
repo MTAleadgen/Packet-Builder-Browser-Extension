@@ -13,8 +13,14 @@ export interface WorkflowState {
   totalSteps: number;
 }
 
+export interface LinkPair {
+  priceLabsUrl: string;
+  airbnbUrl: string;
+}
+
 export type Message = 
   | { type: 'START_GATHERING' }
+  | { type: 'START_WORKFLOW_WITH_PAIRS', selectedPairs: LinkPair[] }
   | { type: 'CANCEL_GATHERING' }
   | { type: 'RESET_WORKFLOW' }
   | { type: 'GET_WORKFLOW_STATE' }

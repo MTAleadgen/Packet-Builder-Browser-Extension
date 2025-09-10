@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { WorkflowState, Message } from '../types';
+import type { WorkflowState, Message, LinkPair } from '../types';
 import { WorkflowStatus } from '../types';
 import { StatusDisplay } from './StatusDisplay';
 
@@ -24,6 +24,12 @@ export const PopupApp: React.FC = () => {
   const [persistentLogs, setPersistentLogs] = useState<any[]>([]);
   const [showPersistentLogs, setShowPersistentLogs] = useState<boolean>(false);
   const [airbnbUrl, setAirbnbUrl] = useState<string>('https://www.airbnb.com/multicalendar/1317460106754094447');
+  const [pairs, setPairs] = useState<LinkPair[]>([{
+    priceLabsUrl: 'https://app.pricelabs.co/pricing?listings=1317460106754094447&pms_name=airbnb&open_calendar=true',
+    airbnbUrl: 'https://www.airbnb.com/multicalendar/1317460106754094447'
+  }]);
+  const [selectedIndexes, setSelectedIndexes] = useState<Record<number, boolean>>({ 0: true });
+  const [isPairsMode, setIsPairsMode] = useState<boolean>(false);
 
   const addLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -159,12 +165,33 @@ export const PopupApp: React.FC = () => {
     }
   }, [airbnbUrl]);
 
+  const addPair = useCallback(() => {
+    setPairs(prev => ([...prev, { priceLabsUrl: '', airbnbUrl: '' }]));
+  }, []);
+
+  const updatePair = useCallback((index: number, field: keyof LinkPair, value: string) => {
+    setPairs(prev => prev.map((p, i) => i === index ? { ...p, [field]: value } : p));
+  }, []);
+
+  const toggleSelected = useCallback((index: number) => {
+    setSelectedIndexes(prev => ({ ...prev, [index]: !prev[index] }));
+  }, []);
+
+  const handleStartPairs = useCallback(() => {
+    const selectedPairs = pairs.filter((_, idx) => !!selectedIndexes[idx]);
+    console.log('🚀 POPUP DEBUG: Start with pairs clicked. Selected:', selectedPairs);
+    chrome.runtime.sendMessage({ type: 'START_WORKFLOW_WITH_PAIRS', selectedPairs });
+  }, [pairs, selectedIndexes]);
+
   const renderContent = () => {
     if (isLoading) {
       return <div className="text-center p-4">Loading...</div>;
     }
     
-    if (!isPriceLabsPage && workflowState.status === WorkflowStatus.IDLE) {
+    // Check if we have selected pairs for navigation
+    const hasSelectedPairs = pairs.some((_, idx) => !!selectedIndexes[idx] && pairs[idx].priceLabsUrl);
+
+    if (!isPriceLabsPage && workflowState.status === WorkflowStatus.IDLE && !hasSelectedPairs) {
       // Check if we're on PriceLabs domain but redirected to login
       const isPriceLabsDomain = currentUrl.includes('app.pricelabs.co');
       const isLoginPage = currentUrl.includes('/login') || currentUrl.includes('login');
@@ -198,12 +225,52 @@ export const PopupApp: React.FC = () => {
       case WorkflowStatus.IDLE:        
         return (
           <div className="space-y-3">
-            <button
-              onClick={handleStart}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 px-4 rounded-lg transition-all duration-300 shadow-lg"
-            >
-              Start Full Workflow
-            </button>
+            <div className="space-y-3">
+              <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+                <div className="text-sm font-semibold mb-2">Link Pairs</div>
+                <div className="text-xs text-gray-400 mb-2">System will automatically navigate to PriceLabs first</div>
+                {pairs.map((pair, idx) => (
+                  <div key={idx} className="grid grid-cols-[20px,1fr] gap-2 mb-2 items-start">
+                    <input type="checkbox" checked={!!selectedIndexes[idx]} onChange={() => toggleSelected(idx)} />
+                    <div className="space-y-1">
+                      <input
+                        type="text"
+                        value={pair.priceLabsUrl}
+                        onChange={(e) => updatePair(idx, 'priceLabsUrl', e.target.value)}
+                        placeholder="PriceLabs URL"
+                        className="w-full px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <input
+                        type="text"
+                        value={pair.airbnbUrl}
+                        onChange={(e) => updatePair(idx, 'airbnbUrl', e.target.value)}
+                        placeholder="Airbnb Multicalendar URL"
+                        className="w-full px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                ))}
+                <button onClick={addPair} className="w-full bg-gray-700 hover:bg-gray-600 text-white text-xs py-1 px-2 rounded">+ Add Pair</button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    const selectedPairs = pairs.filter((_, idx) => !!selectedIndexes[idx]);
+                    console.log('🚀 POPUP DEBUG: Start with pairs clicked. Selected:', selectedPairs);
+                    chrome.runtime.sendMessage({ type: 'START_WORKFLOW_WITH_PAIRS', selectedPairs });
+                  }}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-lg"
+                >
+                  Start With Selected Pairs (Auto-Navigate)
+                </button>
+                <button
+                  onClick={handleStart}
+                  className="w-full bg-slate-600 hover:bg-slate-500 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-lg"
+                >
+                  Start Full Workflow (Current Tab)
+                </button>
+              </div>
+            </div>
             {isCustomizationPage && (
               <>
                 <button
