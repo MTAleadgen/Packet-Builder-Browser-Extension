@@ -71,11 +71,12 @@ async function startWorkflow() {
     try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         const url = tab?.url ?? '';
-        if (!tab || !tab.id || !(url.includes('app.pricelabs.co') && url.includes('/listing'))) {
-            throw new Error("Not on a valid PriceLabs listing page.");
+        if (!tab || !tab.id || !url.includes('app.pricelabs.co/pricing?listings=')) {
+            throw new Error("Not on a valid PriceLabs pricing page.");
         }
         originalTabId = tab.id;
-        listingId = url.split('listing/')[1].split('/')[0];
+        const urlObj = new URL(url);
+        listingId = urlObj.searchParams.get('listings');
 
         // Step 1: Read and store original price
         updateState({ status: WorkflowStatus.RUNNING, step: 1, message: 'Reading original base price...' });
@@ -94,13 +95,12 @@ async function startWorkflow() {
         
         await sendMessageToTab(originalTabId, { type: 'SET_BASE_PRICE', price: newPrice });
 
-        // IMPORTANT: The following selectors are placeholders for PriceLabs.
-        const SAVE_REFRESH_SELECTOR = 'button[data-testid="save-and-refresh-button"]';
+        // IMPORTANT: The following selectors are placeholders for PriceLabs except for the save/refresh action.
         const LOADING_OVERLAY_SELECTOR = 'div[data-testid="loading-spinner-overlay"]';
         const SYNC_NOW_SELECTOR = 'button[data-testid="sync-now-button"]';
         const SYNC_TOAST_SELECTOR = 'div[data-testid="sync-success-toast"]';
 
-        await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SAVE_REFRESH_SELECTOR });
+        await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
         await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR });
         await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SYNC_NOW_SELECTOR });
         
@@ -163,7 +163,7 @@ async function startWorkflow() {
         }
 
         await sendMessageToTab(originalTabId, { type: 'SET_BASE_PRICE', price: priceToRevert });
-        await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SAVE_REFRESH_SELECTOR });
+        await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
         await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: LOADING_OVERLAY_SELECTOR });
         await sendMessageToTab(originalTabId, { type: 'CLICK_ELEMENT', selector: SYNC_NOW_SELECTOR });
         await sendMessageToTab(originalTabId, { type: 'WAIT_FOR_ELEMENT', selector: SYNC_TOAST_SELECTOR });
