@@ -9,6 +9,36 @@ let state: WorkflowState = {
 };
 
 let originalTabId: number;
+let apiTokenGlobal: string | undefined;
+const ZOOM_OUT = 0.25;
+const zk = (id: number) => `zoom_${id}`;
+const wk = (id: number) => `win_${id}`;
+
+async function getActiveOrId(tabId?: number) {
+    if (tabId) return chrome.tabs.get(tabId);
+    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return active;
+}
+
+async function zoomFull(tabId: number, windowId: number) {
+    const tab = await getActiveOrId(tabId);
+    const win = await chrome.windows.get(windowId);
+    const prevZoom = await chrome.tabs.getZoom(tab.id!);
+    await chrome.storage.local.set({ [zk(tab.id!)]: prevZoom, [wk(win.id!)]: win.state });
+    await chrome.tabs.setZoomSettings(tab.id!, { mode: 'automatic', scope: 'per-tab' });
+    await chrome.tabs.setZoom(tab.id!, ZOOM_OUT);
+    await chrome.windows.update(win.id!, { state: 'fullscreen' });
+}
+
+async function zoomRestore(tabId: number, windowId: number) {
+    const tab = await getActiveOrId(tabId);
+    const win = await chrome.windows.get(windowId);
+    const st = await chrome.storage.local.get([zk(tab.id!), wk(win.id!)]);
+    await chrome.tabs.setZoom(tab.id!, st[zk(tab.id!)] ?? 1);
+    if (win.state === 'fullscreen') {
+        await chrome.windows.update(win.id!, { state: st[wk(win.id!)] ?? 'normal' });
+    }
+}
 
 // Storage keys
 const WORKFLOW_STATE_KEY = 'workflow_state';
@@ -54,6 +84,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('Background received message:', message);
     
     switch (message.type) {
+        case 'ZOOM_FULL': {
+            (async () => {
+                try {
+                    const tab = sender?.tab?.id ? await chrome.tabs.get(sender.tab.id) : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+                    if (!tab?.id || !tab.windowId) throw new Error('No tab/window to zoom');
+                    await zoomFull(tab.id, tab.windowId);
+                    sendResponse?.({ ok: true });
+                } catch (e) {
+                    console.warn('ZOOM_FULL failed', (e as Error)?.message);
+                    sendResponse?.({ ok: false, error: (e as Error)?.message });
+                }
+            })();
+            return true;
+        }
+        case 'ZOOM_RESTORE': {
+            (async () => {
+                try {
+                    const tab = sender?.tab?.id ? await chrome.tabs.get(sender.tab.id) : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+                    if (!tab?.id || !tab.windowId) throw new Error('No tab/window to restore');
+                    await zoomRestore(tab.id, tab.windowId);
+                    sendResponse?.({ ok: true });
+                } catch (e) {
+                    console.warn('ZOOM_RESTORE failed', (e as Error)?.message);
+                    sendResponse?.({ ok: false, error: (e as Error)?.message });
+                }
+            })();
+            return true;
+        }
+        case 'SCREENSHOT': {
+            (async () => {
+                try {
+                    const dataUrl = await chrome.tabs.captureVisibleTab(undefined, { format: 'png' });
+                    const filename = `tips-${Date.now()}.png`;
+                    await chrome.downloads.download({ url: dataUrl, filename });
+                    sendResponse?.({ ok: true, filename });
+                } catch (e) {
+                    console.warn('SCREENSHOT failed', (e as Error)?.message);
+                    sendResponse?.({ ok: false, error: (e as Error)?.message });
+                }
+            })();
+            return true;
+        }
         case 'GET_WORKFLOW_STATE':
             sendResponse({ type: 'WORKFLOW_STATE_UPDATE', payload: state });
             break;
@@ -84,6 +156,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             break;
         case 'START_WORKFLOW_WITH_PAIRS': {
             const selectedPairs = message.selectedPairs as Array<{ priceLabsUrl: string; airbnbUrl: string }>;
+            apiTokenGlobal = (message as any).apiToken;
             console.log('🚀 Starting workflow with selected pairs:', selectedPairs);
             if (!selectedPairs || selectedPairs.length === 0) {
                 updateState({ status: WorkflowStatus.ERROR, message: 'No link pairs selected' });
@@ -297,14 +370,24 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
             await updateState({ step: 22, message: 'Airbnb Step 1: Clicking Price Tips button...' });
             console.log('🎯 Executing Price Tips button click...');
 
+            const tab = await chrome.tabs.get(originalTabId);
+            if (!tab.windowId) throw new Error("Tab does not have a windowId.");
+            const originalWindow = await chrome.windows.get(tab.windowId);
+            const originalZoom = await chrome.tabs.getZoom(originalTabId);
+
             try {
                 await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
                 console.log('✅ Price Tips button clicked successfully');
 
-                // Step 23: Scroll calendar to load all months
-                await updateState({ step: 23, message: 'Airbnb Step 2: Scrolling calendar to load all months...' });
-                console.log('📜 Scrolling calendar to load all months...');
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Brief pause
+                // Step 23: Zoom out and go fullscreen to see all months (via new zoom API)
+                await updateState({ step: 23, message: 'Airbnb Step 2: Zooming out and entering fullscreen...' });
+                console.log('🔍 Zooming out and entering fullscreen (service worker)...');
+                await new Promise<void>((resolve, reject) => chrome.runtime.sendMessage({ type: 'ZOOM_FULL' }, (resp) => {
+                    if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+                    if (!resp?.ok) return reject(new Error(resp?.error || 'ZOOM_FULL failed'));
+                    resolve();
+                }));
+                await new Promise(resolve => setTimeout(resolve, 1500));
 
                 // Step 24: Extract price tips data
                 await updateState({ step: 24, message: 'Airbnb Step 3: Extracting price tips data...' });
@@ -322,13 +405,24 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
                     type: 'EXPORT_PRICE_TIPS_CSV',
                     priceData: priceData
                 });
-                console.log('✅ CSV export completed');
                 await navigateBackToPriceLabsIfPairStored();
 
             } catch (airbnbError) {
                 console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
                 // Don't throw error - Airbnb workflow is optional
                 console.log('⚠️ Continuing with success despite Airbnb workflow failure');
+            } finally {
+                // Restore zoom and window state (via new zoom API)
+                console.log('🔄 Restoring original window state and zoom (service worker)...');
+                try {
+                    await new Promise<void>((resolve, reject) => chrome.runtime.sendMessage({ type: 'ZOOM_RESTORE' }, (resp) => {
+                        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+                        if (!resp?.ok) return reject(new Error(resp?.error || 'ZOOM_RESTORE failed'));
+                        resolve();
+                    }));
+                } catch (e) {
+                    console.warn('ZOOM_RESTORE error', (e as Error)?.message);
+                }
             }
 
             // Final success
@@ -427,14 +521,21 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
             await updateState({ step: 22, message: 'Airbnb Step 1: Clicking Price Tips button...' });
             console.log('🎯 Executing Price Tips button click...');
 
+            const tab = await chrome.tabs.get(originalTabId);
+            if (!tab.windowId) throw new Error("Tab does not have a windowId.");
+            const originalWindow = await chrome.windows.get(tab.windowId);
+            const originalZoom = await chrome.tabs.getZoom(originalTabId);
+
             try {
                 await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
                 console.log('✅ Price Tips button clicked successfully');
 
-                // Step 23: Scroll calendar to load all months
-                await updateState({ step: 23, message: 'Airbnb Step 2: Scrolling calendar to load all months...' });
-                console.log('📜 Scrolling calendar to load all months...');
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Brief pause
+                // Step 23: Zoom out and go fullscreen to see all months
+                await updateState({ step: 23, message: 'Airbnb Step 2: Zooming out and entering fullscreen...' });
+                console.log('🔍 Zooming out and entering fullscreen...');
+                await chrome.windows.update(tab.windowId, { state: 'fullscreen' });
+                await chrome.tabs.setZoom(originalTabId, 0.3);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for changes to apply
 
                 // Step 24: Extract price tips data
                 await updateState({ step: 24, message: 'Airbnb Step 3: Extracting price tips data...' });
@@ -458,6 +559,17 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
                 console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
                 // Don't throw error - Airbnb workflow is optional
                 console.log('⚠️ Continuing with success despite Airbnb workflow failure');
+            } finally {
+                // Restore zoom and window state
+                console.log('🔄 Restoring original window state and zoom...');
+                await chrome.tabs.setZoom(originalTabId, originalZoom);
+                await chrome.windows.update(tab.windowId, {
+                    state: originalWindow.state,
+                    left: originalWindow.left,
+                    top: originalWindow.top,
+                    width: originalWindow.width,
+                    height: originalWindow.height,
+                });
             }
 
         } catch (showDashboardError) {
@@ -509,10 +621,7 @@ async function resumeMarketResearchWorkflow(startStep: number) {
             }
         }
         
-        // Ensure we're on the reports page and inject content script
-        await injectScript(originalTabId!);
-        await waitForTabLoad(originalTabId!);
-        await new Promise(res => setTimeout(res, 3000)); // Wait for page to settle
+        // Continue with UI steps
         
         // Step 18: Click Show Dashboard (conditionally skip if starting later)
         if (startStep <= 18) {
@@ -560,12 +669,20 @@ async function resumeMarketResearchWorkflow(startStep: number) {
             // Step 22: Click Price Tips button
             updateState({ step: 22, message: 'Airbnb Step 1: Clicking Price Tips button...' });
 
+            const tab = await chrome.tabs.get(originalTabId);
+            if (!tab.windowId) throw new Error("Tab does not have a windowId.");
+            const originalWindow = await chrome.windows.get(tab.windowId);
+            const originalZoom = await chrome.tabs.getZoom(originalTabId);
+
             try {
                 await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
 
-                // Step 23: Scroll calendar to load all months
-                updateState({ step: 23, message: 'Airbnb Step 2: Scrolling calendar to load all months...' });
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Brief pause
+                // Step 23: Zoom out and go fullscreen to see all months
+                await updateState({ step: 23, message: 'Airbnb Step 2: Zooming out and entering fullscreen...' });
+                console.log('🔍 Zooming out and entering fullscreen...');
+                await chrome.windows.update(tab.windowId, { state: 'fullscreen' });
+                await chrome.tabs.setZoom(originalTabId, 0.3);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for changes to apply
 
                 // Step 24: Extract price tips data
                 updateState({ step: 24, message: 'Airbnb Step 3: Extracting price tips data...' });
@@ -586,6 +703,17 @@ async function resumeMarketResearchWorkflow(startStep: number) {
                 console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
                 // Don't throw error - Airbnb workflow is optional
                 console.log('⚠️ Continuing with success despite Airbnb workflow failure');
+            } finally {
+                // Restore zoom and window state
+                console.log('🔄 Restoring original window state and zoom...');
+                await chrome.tabs.setZoom(originalTabId, originalZoom);
+                await chrome.windows.update(tab.windowId, {
+                    state: originalWindow.state,
+                    left: originalWindow.left,
+                    top: originalWindow.top,
+                    width: originalWindow.width,
+                    height: originalWindow.height,
+                });
             }
         }
 
@@ -690,6 +818,281 @@ async function injectScript(tabId: number): Promise<void> {
     });
 }
 
+async function installNetworkLoggerInMainWorld(tabId: number): Promise<void> {
+	try {
+		await chrome.scripting.executeScript({
+			target: { tabId, allFrames: true },
+			// @ts-ignore
+			world: 'MAIN',
+			func: () => {
+				// Avoid double-install
+				if ((window as any).__pcpNetworkLoggerInstalled) return;
+				(Object.assign(window as any, { __pcpNetworkLoggerInstalled: true }));
+				const markSaveOk = (url: string, status: number) => {
+					try {
+						const savePattern = /\/pricing\/base\/save$/i;
+						let path = '';
+						try { path = new URL(url).pathname; } catch { path = url; }
+						if (savePattern.test(path) && status >= 200 && status < 300) {
+							(window as any).__pcpSaveOkAt = Date.now();
+							(window as any).__pcpSaveOkUrl = url;
+							console.log('✅ MAIN-WORLD: Save 2xx detected', { url, status, at: (window as any).__pcpSaveOkAt });
+						}
+					} catch {}
+				};
+				const origFetch = window.fetch;
+				window.fetch = async (...args: any[]) => {
+					let url = '';
+					let method = 'GET';
+					let bodyPreview = '';
+					try {
+						if (args[0] instanceof Request) {
+							url = (args[0] as Request).url;
+							method = (args[0] as Request).method || method;
+							try { const clone = (args[0] as Request).clone(); bodyPreview = await clone.text(); if (bodyPreview.length > 500) bodyPreview = bodyPreview.slice(0, 500) + '…'; } catch {}
+						} else {
+							url = (args[0] && args[0].toString()) || '';
+							if (args[1] && typeof args[1] === 'object') { method = (args[1] as any).method || method; const body = (args[1] as any).body; if (typeof body === 'string') bodyPreview = body.slice(0, 500); else if (body && typeof body === 'object') bodyPreview = `[${(body as any).constructor?.name}]`; }
+						}
+					} catch {}
+					const start = Date.now();
+					const res = await origFetch.apply(window, args as any);
+					const dur = Date.now() - start;
+					try { console.log('📡 FETCH', { method, url, status: (res as Response).status, ms: dur, bodyPreview }); } catch {}
+					try { markSaveOk(url, (res as Response).status); } catch {}
+					return res;
+				};
+				const origOpen = XMLHttpRequest.prototype.open;
+				const origSend = XMLHttpRequest.prototype.send;
+				XMLHttpRequest.prototype.open = function(method: string, url: string) { (this as any).__pcpUrl = url; (this as any).__pcpMethod = method; return origOpen.apply(this, arguments as any); } as any;
+				XMLHttpRequest.prototype.send = function(body?: Document | BodyInit | null) {
+					const xhr = this as any; const start = Date.now();
+					xhr.addEventListener('loadend', function() {
+						const dur = Date.now() - start; let bodyPreview = '';
+						try { if (typeof body === 'string') bodyPreview = (body as string).slice(0, 500); else if (body && typeof body === 'object') bodyPreview = `[${(body as any).constructor?.name}]`; } catch {}
+						try { console.log('📡 XHR', { method: xhr.__pcpMethod || '', url: xhr.__pcpUrl || '', status: xhr.status, ms: dur, bodyPreview }); } catch {}
+						try { markSaveOk(xhr.__pcpUrl || '', xhr.status); } catch {}
+					});
+					return origSend.apply(this, arguments as any);
+				} as any;
+				console.log('✅ MAIN-WORLD: Network logger installed');
+			}
+		});
+	} catch (e) {
+		console.warn('Network logger install failed', e);
+	}
+}
+
+async function waitForSave2xxInMainWorld(tabId: number, startTs: number, timeoutMs: number = 20000): Promise<boolean> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		try {
+			const res = await chrome.scripting.executeScript({
+				target: { tabId, allFrames: true },
+				// @ts-ignore
+				world: 'MAIN',
+				func: () => ({ at: (window as any).__pcpSaveOkAt || 0, url: (window as any).__pcpSaveOkUrl || '' })
+			});
+			const results = Array.isArray(res) ? res : (res ? [res] : []);
+			for (const r of results as any[]) {
+				const val = (r && (r as any).result) || { at: 0, url: '' };
+				if (val.at && val.at > startTs) { console.log('✅ Save 2xx confirmed via MAIN world flag', val); return true; }
+			}
+		} catch {}
+		await new Promise(r => setTimeout(r, 300));
+	}
+	console.warn('⌛ Timed out waiting for save 2xx confirmation');
+	return false;
+}
+
+async function waitForSaveWithFallback(tabId: number, startTs: number, totalTimeoutMs: number = 20000): Promise<boolean> {
+	const fastWindowMs = Math.min(2000, totalTimeoutMs);
+	const t0 = Date.now();
+	const okFast = await waitForSave2xxInMainWorld(tabId, startTs, fastWindowMs);
+	if (okFast) return true;
+	try { await clickSaveRefreshViaCDP(tabId); } catch {}
+	const elapsed = Date.now() - t0;
+	const remaining = Math.max(1000, totalTimeoutMs - elapsed);
+	return await waitForSave2xxInMainWorld(tabId, startTs, remaining);
+}
+
+async function setBasePriceInMainWorld(tabId: number, delta: number): Promise<void> {
+	console.log('🧠 MAIN-WORLD: Setting base price delta', delta);
+	await chrome.scripting.executeScript({
+		target: { tabId, allFrames: true },
+		// @ts-ignore
+		world: 'MAIN',
+		args: [delta],
+		func: (deltaArg: number) => {
+			const log = (...args: any[]) => { try { console.log('🧠 MAIN-WORLD:setBasePrice', ...args); } catch {} };
+			const toNum = (s: string) => { const n = parseFloat((s || '').replace(/[^0-9.-]/g, '')); return Number.isFinite(n) ? n : NaN; };
+			const inputs = Array.from(document.querySelectorAll('input.chakra-numberinput__field')) as HTMLInputElement[];
+			const withVals = inputs.map((el, idx) => ({ el, idx, val: toNum(el.value) })).filter(x => Number.isFinite(x.val) && x.val! > 0 && x.val! < 100000);
+			log('found price inputs', withVals.map(x => ({ idx: x.idx, val: x.val })));
+			if (withVals.length < 2) { log('not enough inputs to identify base'); return; }
+			// Heuristic: three inputs [min, base, max] in DOM order => base is middle
+			let base = withVals.length >= 3 ? withVals[1] : withVals[0];
+			const input = base.el;
+			const current = toNum(input.value) || 0;
+			const rawTarget = current + (deltaArg || 0);
+			const target = Math.round(rawTarget);
+			const ownerWin = input.ownerDocument?.defaultView || window;
+			const setter = Object.getOwnPropertyDescriptor(ownerWin.HTMLInputElement.prototype, 'value')?.set;
+			input.scrollIntoView({ behavior: 'auto', block: 'center' });
+			input.focus();
+			// Select all then set via native setter
+			input.dispatchEvent(new ownerWin.KeyboardEvent('keydown', { key: 'Control', bubbles: true }));
+			input.dispatchEvent(new ownerWin.KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+			input.dispatchEvent(new ownerWin.KeyboardEvent('keyup', { key: 'a', bubbles: true }));
+			input.dispatchEvent(new ownerWin.KeyboardEvent('keyup', { key: 'Control', bubbles: true }));
+			if (setter) setter.call(input, String(target)); else (input as any).value = String(target);
+			input.dispatchEvent(new ownerWin.Event('input', { bubbles: true }));
+			input.dispatchEvent(new ownerWin.Event('change', { bubbles: true }));
+			// Nudge framework handlers
+			input.dispatchEvent(new ownerWin.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+			input.dispatchEvent(new ownerWin.KeyboardEvent('keyup', { key: 'ArrowUp', bubbles: true }));
+			input.dispatchEvent(new ownerWin.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+			input.dispatchEvent(new ownerWin.KeyboardEvent('keyup', { key: 'ArrowDown', bubbles: true }));
+			// Press Enter to commit in number input
+			input.dispatchEvent(new ownerWin.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+			input.dispatchEvent(new ownerWin.KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+			input.blur();
+			log('updated base from', current, 'to', target, '(raw target:', rawTarget, ')');
+		}
+	});
+}
+
+async function clickSaveRefreshInMainWorld(tabId: number): Promise<void> {
+	console.log('🧠 MAIN-WORLD: Preparing to click Save & Refresh from main world');
+	await chrome.scripting.executeScript({
+		target: { tabId, allFrames: true },
+		// @ts-ignore - world property supported in MV3
+		world: 'MAIN',
+		func: () => {
+			const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+			const findButton = (): HTMLElement | null => {
+				const byId = document.querySelector('button#rp-save-and-refresh') as HTMLElement | null;
+				if (byId) return byId;
+				const candidates = Array.from(document.querySelectorAll('button')) as HTMLElement[];
+				return candidates.find(btn => {
+					const t = (btn.textContent || '').toLowerCase();
+					return t.includes('save') && (t.includes('refresh') || t.includes('&'));
+				}) || null;
+			};
+			const pointerClick = (el: HTMLElement) => {
+				const rect = el.getBoundingClientRect();
+				const cx = rect.left + rect.width / 2;
+				const cy = rect.top + rect.height / 2;
+				const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 1 } as any;
+				el.dispatchEvent(new (window as any).PointerEvent('pointerdown', { ...opts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+				el.dispatchEvent(new MouseEvent('mousedown', opts));
+				el.dispatchEvent(new MouseEvent('mouseup', opts));
+				el.dispatchEvent(new MouseEvent('click', opts));
+			};
+			(async () => {
+				const btn = findButton();
+				if (!btn) {
+					console.log('❌ MAIN-WORLD: Save & Refresh button not found');
+					return;
+				}
+				console.log('🔍 MAIN-WORLD: Found Save & Refresh button', {
+					id: (btn as HTMLButtonElement).id,
+					disabled: (btn as HTMLButtonElement).disabled,
+					hasDisabledAttr: btn.hasAttribute('disabled'),
+					ariaDisabled: btn.getAttribute('aria-disabled'),
+					dataLoading: btn.getAttribute('data-loading'),
+					text: btn.textContent
+				});
+				let attempts = 60;
+				while ((btn as HTMLButtonElement).disabled || btn.hasAttribute('disabled') || btn.getAttribute('aria-disabled') === 'true' || btn.getAttribute('data-loading') === 'true') {
+					if (attempts-- <= 0) {
+						console.warn('⌛ MAIN-WORLD: Timed out waiting for Save & Refresh to enable');
+						break;
+					}
+					await sleep(250);
+				}
+				(btn as HTMLElement).scrollIntoView({ behavior: 'auto', block: 'center' });
+				(btn as HTMLElement).focus();
+				pointerClick(btn as HTMLElement);
+				(btn as any).click && (btn as any).click();
+				console.log('✅ MAIN-WORLD: Save & Refresh click dispatched');
+			})();
+		}
+	});
+}
+
+async function readOneCalendarPriceInMainWorld(tabId: number): Promise<number | null> {
+	try {
+		const res = await chrome.scripting.executeScript({
+			target: { tabId, allFrames: true },
+			// @ts-ignore
+			world: 'MAIN',
+			func: () => {
+				const cells = Array.from(document.querySelectorAll('[data-testid="calendar-cell"],[role="gridcell"]')) as HTMLElement[];
+				const extract = (text: string): number | null => {
+					const t = (text || '').trim();
+					const cur = t.match(/[£$€]\s?([0-9]{2,4})/);
+					if (cur) {
+						const v = parseInt(cur[1], 10);
+						if (Number.isFinite(v)) return v;
+					}
+					const nums = Array.from(t.matchAll(/\b([0-9]{2,4})\b/g)).map(m => parseInt(m[1], 10)).filter(n => Number.isFinite(n));
+					const plausible = nums.filter(n => n >= 30 && n <= 5000);
+					if (plausible.length > 0) return Math.max(...plausible);
+					return null;
+				};
+				for (const c of cells) {
+					const val = extract(c.textContent || '');
+					if (val !== null) return val;
+				}
+				return null;
+			}
+		});
+		const vals = (Array.isArray(res) ? res : [res]).map(r => (r as any)?.result).filter((v): v is number => typeof v === 'number');
+		return vals.length ? vals[0] : null;
+	} catch {
+		return null;
+	}
+}
+
+async function clickSaveRefreshViaCDP(tabId: number): Promise<void> {
+	try {
+		console.log('🖱️ CDP: Attempting Input.dispatchMouseEvent click on Save & Refresh');
+		await new Promise<void>((resolve, reject) => {
+			chrome.debugger.attach({ tabId }, '1.3', async () => {
+				if (chrome.runtime.lastError) {
+					console.warn('CDP attach failed', chrome.runtime.lastError.message);
+					resolve();
+					return;
+				}
+				const send = (method: string, params?: any) => new Promise<void>((res, rej) => chrome.debugger.sendCommand({ tabId }, method, params, () => {
+					if (chrome.runtime.lastError) return rej(new Error(chrome.runtime.lastError.message));
+					res();
+				}));
+				try {
+					await send('DOM.enable');
+					await send('Runtime.enable');
+					const evalRes = await new Promise<any>((res) => chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', { expression: `(() => { const el = document.querySelector('button#rp-save-and-refresh') || Array.from(document.querySelectorAll('button')).find(b=>/save/i.test(b.textContent||'')&&/refresh|&/i.test(b.textContent||'')); if(!el) return null; const r=el.getBoundingClientRect(); return {x:r.left+r.width/2, y:r.top+r.height/2}; })()`, returnByValue: true }, (r) => res(r)));
+					const point = evalRes?.result?.value;
+					if (!point) {
+						console.warn('CDP: Could not locate button center');
+					} else {
+						await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(point.x), y: Math.round(point.y), button: 'left', clickCount: 1 });
+						await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(point.x), y: Math.round(point.y), button: 'left', clickCount: 1 });
+						console.log('✅ CDP: Dispatched mouse click at', point);
+					}
+				} catch (e) {
+					console.warn('CDP click failed', e);
+				} finally {
+					chrome.debugger.detach({ tabId }, () => resolve());
+				}
+			});
+		});
+	} catch (e) {
+		console.warn('CDP click overall failed', e);
+	}
+}
+
 async function waitForTabLoad(tabId: number): Promise<void> {
     return new Promise((resolve) => {
         const checkComplete = () => {
@@ -712,7 +1115,7 @@ async function waitForTabLoad(tabId: number): Promise<void> {
 
 async function startWorkflowFromStep(startStep: number) {
     // Placeholder for full workflow resume - not implemented yet
-    throw new Error('Full workflow resume not implemented yet. Please start from a supported page.');
+    throw new Error('Full workflow resume not implemented for API mode.');
 }
 
 async function navigateToAirbnbMulticalendar() {
@@ -757,95 +1160,19 @@ async function startWorkflow() {
             throw new Error("Please navigate to a PriceLabs listing calendar page first.");
         }
         originalTabId = tab.id;
-
-        await updateState({ status: WorkflowStatus.RUNNING, step: 1, message: 'Starting workflow...' });
-
-        // Inject content script
-        await injectScript(originalTabId);
-        await waitForTabLoad(originalTabId);
-
-        // Step 1: Increase base price by $100
-        await updateState({ step: 1, message: 'Step 1: Increasing base price by $100...' });
-        await sendMessageToTab(originalTabId, { type: 'INCREASE_BASE_PRICE' });
-        await new Promise(res => setTimeout(res, 500)); // Reduced from 2s to 0.5s
-
-        // Step 2: Click Save & Refresh button (extended wait)
-        await updateState({ step: 2, message: 'Step 2: Clicking Save & Refresh button...' });
-        await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
-        await new Promise(res => setTimeout(res, 15000)); // Extended to 15s - wait for save to process
-
-        // Step 3: Click Sync Now button (dummy click, wait 3 seconds)
-        await updateState({ step: 3, message: 'Step 3: Clicking Sync Now button (dummy)...' });
-        await sendMessageToTab(originalTabId, { type: 'DUMMY_SYNC_CLICK' });
-        await new Promise(res => setTimeout(res, 3000)); // 3 second wait
-
-        // Step 4: Click Edit button (main screen)
-        await updateState({ step: 4, message: 'Step 4: Clicking Edit button...' });
-        await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_1_EDIT' });
-        await new Promise(res => setTimeout(res, 3000));
-
-        // Step 5: Scroll and click Edit Profile
-        await updateState({ step: 5, message: 'Step 5: Scrolling and clicking Edit Profile...' });
-        await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
-        await new Promise(res => setTimeout(res, 3000));
-
-        // Step 6: Click Edit Profile button in popup
-        await updateState({ step: 6, message: 'Step 6: Clicking Edit Profile button in popup...' });
-        await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
-        await new Promise(res => setTimeout(res, 3000));
-
-        // Step 7: Click Download button in popup
-        await updateState({ step: 7, message: 'Step 7: Clicking Download button...' });
-        await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_4_DOWNLOAD' });
-        await new Promise(res => setTimeout(res, 3000));
-
-        // Step 8: Close popup
-        await updateState({ step: 8, message: 'Step 8: Closing popup...' });
-        await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_5_CLOSE_POPUP' });
-        await new Promise(res => setTimeout(res, 3000));
-
-        // Step 9: Click Dynamic Pricing dropdown
-        await updateState({ step: 9, message: 'Step 9: Clicking Dynamic Pricing dropdown...' });
-        await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_1_DYNAMIC_PRICING' });
-        await new Promise(res => setTimeout(res, 3000));
-
-        // Step 10: Select Customizations
-        await updateState({ step: 10, message: 'Step 10: Selecting Customizations...' });
-        await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_2_CUSTOMIZATIONS' });
-        await new Promise(res => setTimeout(res, 3000));
-
-        // Step 11: Complete navigation
-        await updateState({ step: 11, message: 'Step 11: Completing navigation...' });
-        await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_3_COMPLETE' });
-
-        // Extended wait and re-injection for Customizations page navigation
-        console.log('🔄 Waiting for Customizations page navigation...');
-        await new Promise(res => setTimeout(res, 8000)); // 8-second wait for page navigation
-
-        // Check if we got redirected or stayed on the right page
-        const [navTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const navUrl = navTab?.url ?? '';
-        console.log('🔍 Post-navigation URL check:', navUrl);
-        
-        if (!navUrl.includes('/customization')) {
-            throw new Error(`❌ Navigation failed. Expected /customization, got: ${navUrl}. Please navigate to customizations page manually.`);
+        await updateState({ status: WorkflowStatus.RUNNING, step: 1, message: 'Starting API workflow...' });
+        // Extract listing and PMS and call API
+        const { listingId, pms } = await extractListingParamsFromUrl(url);
+        const token = apiTokenGlobal;
+        if (!token) {
+            throw new Error('API token is required. Please enter it in the popup.');
         }
-
-        // Re-inject content script after navigation
-        console.log('🔄 Re-injecting content script after Customizations navigation...');
-        await injectScript(originalTabId);
-        await waitForTabLoad(originalTabId);
-
-        // Additional wait for React components to initialize
-        console.log('🔄 Waiting for Customizations React components to initialize...');
-        await new Promise(res => setTimeout(res, 5000)); // Extra wait for component initialization
-
-        // Verify we're on the right page
-        console.log('✅ Customizations page navigation completed, content script re-injected');
-        await new Promise(res => setTimeout(res, 3000)); // Wait for page to settle completely
-
-        // Continue with customizations workflow (full workflow, not customizations-only)
-        await resumeCustomizationsWorkflow(14, false); // false = continue to Market Research
+        const computedBase = undefined; // no max from single-tab flow; pairs flow provides it
+        await updateState({ step: 2, message: 'Calling PriceLabs Listings API...' });
+        await callPriceLabsListingsApi(listingId, pms, token, computedBase);
+        await updateState({ status: WorkflowStatus.SUCCESS, message: 'API call executed for current tab.' });
+        await clearWorkflowState();
+        return;
 
     } catch (error) {
         console.error("Workflow error:", error);
@@ -863,28 +1190,37 @@ async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
         if (!tab || !tab.id) throw new Error('No active tab found.');
         originalTabId = tab.id;
 
-        await updateState({ status: WorkflowStatus.RUNNING, step: 1, message: 'Navigating to PriceLabs URL...' });
+        // 1) GET current listing to store base/min/max, then POST to set base=max
+        await updateState({ status: WorkflowStatus.RUNNING, step: 1, message: 'Step 1: Fetching current listing from API...' });
+        const { listingId, pms } = await extractListingParamsFromUrl(priceLabsUrl);
+        const token = apiTokenGlobal;
+        if (!token) throw new Error('API token is required. Please enter it in the popup.');
+        const current = await getListingViaApi(listingId, token);
+        const originalBase = current?.base;
+        const maxFromApi = current?.max;
+        console.log('📡 API GET current listing:', current);
+        await chrome.storage.local.set({ originalBase, originalListingId: listingId, originalPms: pms });
+
+        // 2) POST to set base to max
+        await updateState({ step: 2, message: 'Step 2: Setting base to max via API...' });
+        const computedBase = typeof maxFromApi === 'number' ? Math.floor(maxFromApi) : undefined;
+        if (typeof computedBase === 'number') {
+            await callPriceLabsListingsApi(listingId, pms, token, computedBase);
+        } else {
+            console.warn('⚠️ No max from API; skipping base set');
+        }
+
+        // 2) Navigate to PriceLabs AFTER the API call
+        await updateState({ step: 3, message: 'Step 3: Navigating to PriceLabs URL...' });
         console.log('🌐 Navigating to PriceLabs URL:', priceLabsUrl);
         await chrome.tabs.update(originalTabId, { url: priceLabsUrl });
+        await new Promise(resolve => setTimeout(resolve, 3000));
 
-        console.log('⏳ Waiting 5 seconds for PriceLabs page to load...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
-
+        // Continue with the normal workflow from Dummy Sync (Step 3)
         await injectScript(originalTabId);
         await waitForTabLoad(originalTabId);
-
-        // Proceed with normal workflow from Step 1
-        await updateState({ step: 1, message: 'Step 1: Increasing base price by $100...' });
-        await sendMessageToTab(originalTabId, { type: 'INCREASE_BASE_PRICE' });
-        await new Promise(res => setTimeout(res, 500));
-
-        // Step 2: Save & Refresh (extended wait)
-        await updateState({ step: 2, message: 'Step 2: Clicking Save & Refresh button...' });
-        await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
-        await new Promise(res => setTimeout(res, 15000));
-
-        // Continue full workflow
         await proceedAfterInitialSteps();
+        return;
 
         // After CSV export in existing flow, navigate back handled elsewhere
     } catch (error) {
@@ -1029,8 +1365,21 @@ async function navigateBackToPriceLabsIfPairStored() {
         await waitForTabLoad(originalTabId);
         console.log('✅ Back on PriceLabs page');
 
-        // After navigating back, reduce the base price by -$100
-        await reduceBasePriceWorkflow();
+        // After navigating back, reset base via API (skip manual UI)
+        try {
+            const stored = await chrome.storage.local.get(['originalBase', 'originalListingId', 'originalPms']);
+            const baseToRestore = stored.originalBase;
+            const listingId = stored.originalListingId;
+            const pms = stored.originalPms;
+            if (typeof baseToRestore === 'number' && listingId && pms && apiTokenGlobal) {
+                console.log('🔁 Restoring original base via API:', { listingId, pms, baseToRestore });
+                await callPriceLabsListingsApi(listingId, pms, apiTokenGlobal, Math.floor(baseToRestore));
+            } else {
+                console.warn('⚠️ Missing stored base/listing/pms/token; skipping API restore');
+            }
+        } catch (e) {
+            console.warn('Restore base via API failed', (e as Error)?.message);
+        }
 
     } catch (e) {
         console.error('Failed to navigate back to PriceLabs:', e);
@@ -1038,53 +1387,133 @@ async function navigateBackToPriceLabsIfPairStored() {
 }
 
 async function reduceBasePriceWorkflow() {
+    // Manual reduction and Save/Refresh are removed in API mode.
+    console.log('ℹ️ reduceBasePriceWorkflow skipped: manual UI steps replaced by API restore.');
+}
+
+async function getBasePriceFromContent(tabId: number): Promise<number | null> {
+	try {
+		const resp = await sendMessageToTab<{ type: 'BASE_PRICE_RESPONSE'; price: number }>(tabId, { type: 'GET_BASE_PRICE' } as any);
+		return typeof (resp as any).price === 'number' ? (resp as any).price : null;
+	} catch {
+		return null;
+	}
+}
+
+async function readServerBasePrice(tabId: number): Promise<number | null> {
+	try {
+		const resp = await sendMessageToTab<{ type: 'SERVER_BASE_PRICE_RESPONSE'; price: number | null }>(tabId, { type: 'READ_SERVER_BASE_PRICE' } as any);
+		return (resp as any).price ?? null;
+	} catch {
+		return null;
+	}
+}
+
+async function waitForBasePriceToPersist(tabId: number, expected: number, timeoutMs: number = 12000): Promise<boolean> {
+	const start = Date.now();
+	let last: number | null = null;
+	while (Date.now() - start < timeoutMs) {
+		last = await getBasePriceFromContent(tabId);
+		console.log('🔎 Post-save base price readback:', last, 'expected:', expected);
+		if (last === expected) return true;
+		await new Promise(res => setTimeout(res, 1000));
+	}
+	console.warn('⌛ Base price did not match expected within timeout. Last seen:', last, 'expected:', expected);
+	return false;
+}
+
+async function softRefreshIfMismatch(tabId: number, expected: number): Promise<void> {
+	try {
+		const server = await readServerBasePrice(tabId);
+		const ui = await getBasePriceFromContent(tabId);
+		console.log('🧰 Soft refresh check (UI vs Server vs Expected):', ui, server, expected);
+		if (server === expected && ui !== expected) {
+			console.log('🔄 UI mismatch with server, reloading tab to refresh UI...');
+			await reloadAndReinject(tabId);
+		}
+	} catch (e) {
+		console.warn('Soft refresh check failed', e);
+	}
+}
+
+async function reloadAndReinject(tabId: number): Promise<void> {
+	console.log('🔄 Reloading tab to refresh UI...');
+	await new Promise<void>((resolve) => chrome.tabs.reload(tabId, { bypassCache: true }, () => resolve()));
+	await new Promise(res => setTimeout(res, 5000));
+	await injectScript(tabId);
+	await waitForTabLoad(tabId);
+	console.log('✅ UI reloaded and content script re-injected');
+}
+
+async function extractListingParamsFromUrl(url: string): Promise<{ listingId: string; pms: string }> {
+	const u = new URL(url);
+	const listingId = u.searchParams.get('listings') || '';
+	const pms = u.searchParams.get('pms_name') || u.searchParams.get('pms') || '';
+	if (!listingId || !pms) throw new Error(`Could not parse listingId/pms from URL: ${url}`);
+	return { listingId, pms };
+}
+
+async function callPriceLabsListingsApi(listingId: string, pms: string, apiToken: string, base?: number): Promise<void> {
+	console.log('📡 API: Preparing request', { listingId, pms, baseDefined: typeof base === 'number' });
+	// Verify listing and current PMS/base first
+	try {
+		const getUrl = `https://api.pricelabs.co/v1/listings/${encodeURIComponent(listingId)}`;
+		console.log('📡 API GET:', getUrl);
+		const getRes = await fetch(getUrl, {
+			method: 'GET',
+			headers: {
+				'X-API-Key': apiToken,
+				'Content-Type': 'application/json'
+			}
+		});
+		const getCt = getRes.headers.get('content-type') || '';
+		const getText = await getRes.text();
+		let getJson: any = null;
+		try { if (getCt.includes('application/json')) getJson = JSON.parse(getText); } catch {}
+		console.log('📡 API GET status:', getRes.status, 'ct:', getCt, 'json:', getJson ?? getText.slice(0, 400));
+		if (!getRes.ok) {
+			throw new Error(`GET /v1/listings/${listingId} failed: ${getRes.status} ${getText.slice(0, 400)}`);
+		}
+	} catch (e) {
+		console.warn('⚠️ API GET verification failed (continuing to POST):', (e as Error)?.message);
+	}
+
+	const payload: any = { listings: [ { id: listingId, pms } ] };
+	if (typeof base === 'number') payload.listings[0].base = base;
+	const postUrl = 'https://api.pricelabs.co/v1/listings';
+	console.log('📡 API POST:', postUrl, 'body:', JSON.stringify(payload));
+	const res = await fetch(postUrl, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'X-API-Key': apiToken,
+		},
+		body: JSON.stringify(payload),
+	});
+	const ct = res.headers.get('content-type') || '';
+	const text = await res.text();
+	let json: any = null;
+	try { if (ct.includes('application/json')) json = JSON.parse(text); } catch {}
+	console.log('📡 API POST status:', res.status, 'ct:', ct, 'json:', json ?? text.slice(0, 400));
+	if (!res.ok) throw new Error(`API error ${res.status}: ${text.slice(0, 400)}`);
+	if (json && Array.isArray(json.listings)) {
+		console.log('✅ API: update accepted for listings:', json.listings.map((l: any) => ({ id: l.id, pms: l.pms, base: l.base })));
+	}
+}
+
+async function getListingViaApi(listingId: string, apiToken: string): Promise<{ id: string; base?: number; min?: number; max?: number } | null> {
+    const url = `https://api.pricelabs.co/v1/listings/${encodeURIComponent(listingId)}`;
+    const res = await fetch(url, { headers: { 'X-API-Key': apiToken } });
+    const text = await res.text();
+    if (!res.ok) {
+        console.warn('GET listing failed', res.status, text.slice(0, 200));
+        return null;
+    }
     try {
-        console.log('💰 Starting base price reduction workflow...');
-
-        // Step 26: Reduce base price by -$100
-        await updateState({ step: 26, message: 'Step 26: Reducing base price by -$100...' });
-        await sendMessageToTab(originalTabId, { type: 'DECREASE_BASE_PRICE' });
-        await new Promise(res => setTimeout(res, 500));
-
-        // Step 27: Click Save & Refresh button (extended wait)
-        await updateState({ step: 27, message: 'Step 27: Clicking Save & Refresh button...' });
-        await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
-        await new Promise(res => setTimeout(res, 15000));
-
-        // Step 28: Click Sync Now button (dummy click, wait 3 seconds)
-        await updateState({ step: 28, message: 'Step 28: Clicking Sync Now button (dummy)...' });
-        await sendMessageToTab(originalTabId, { type: 'DUMMY_SYNC_CLICK' });
-        await new Promise(res => setTimeout(res, 3000));
-
-        // Step 29: Click Edit button (following original steps 4-6)
-        await updateState({ step: 29, message: 'Step 29: Clicking Edit button...' });
-        await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_1_EDIT' });
-        await new Promise(res => setTimeout(res, 3000));
-
-        // Step 30: Scrolling and clicking Edit Profile
-        await updateState({ step: 30, message: 'Step 30: Scrolling and clicking Edit Profile...' });
-        await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
-        await new Promise(res => setTimeout(res, 3000));
-
-        // Step 31: Clicking Edit Profile button in popup - FINAL STEP
-        await updateState({ step: 31, message: 'Step 31: Clicking Edit Profile button in popup...' });
-        await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
-        await new Promise(res => setTimeout(res, 3000));
-
-        console.log('✅ Base price reduction workflow completed - Edit Profile popup opened, workflow finished');
-
-        // Final success
-        await updateState({
-            status: WorkflowStatus.SUCCESS,
-            message: `Complete workflow finished! Price increased, PDF downloaded, Airbnb visited, CSV exported, and price reduced back to original.`,
-        });
-        await clearWorkflowState();
-
-    } catch (error) {
-        console.error('❌ Error in base price reduction workflow:', error);
-        await updateState({
-            status: WorkflowStatus.ERROR,
-            message: `Error at step ${state.step}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        });
+        const json = JSON.parse(text);
+        const lst = json?.listings?.[0];
+        return lst ? { id: lst.id, base: lst.base, min: lst.min, max: lst.max } : null;
+    } catch {
+        return null;
     }
 }

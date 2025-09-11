@@ -20,7 +20,7 @@ export interface LinkPair {
 
 export type Message = 
   | { type: 'START_GATHERING' }
-  | { type: 'START_WORKFLOW_WITH_PAIRS', selectedPairs: LinkPair[] }
+  | { type: 'START_WORKFLOW_WITH_PAIRS', selectedPairs: LinkPair[], apiToken?: string }
   | { type: 'CANCEL_GATHERING' }
   | { type: 'RESET_WORKFLOW' }
   | { type: 'GET_WORKFLOW_STATE' }
@@ -56,9 +56,15 @@ export type ContentScriptMessage =
   | { type: 'WAIT_FOR_ELEMENT_TO_DISAPPEAR', selector: string, timeout?: number }
   | { type: 'WAIT_FOR_ELEMENT', selector: string, timeout?: number }
   | { type: 'SELECT_AIRBNB_LISTING', listingName: string } // Example, adapt as needed
-  | { type: 'TOGGLE_PRICE_TIPS' };
+  | { type: 'TOGGLE_PRICE_TIPS' }
+  | { type: 'READ_SERVER_BASE_PRICE' }
+  | { type: 'SNAPSHOT_CALENDAR_PRICES' }
+  | { type: 'CHECK_CALENDAR_UPDATED' }
+  | { type: 'FORCE_CALENDAR_RERENDER' };
 
 export type ContentScriptResponse =
   | { type: 'SUCCESS' }
   | { type: 'ERROR', message: string }
-  | { type: 'BASE_PRICE_RESPONSE', price: number };
+  | { type: 'BASE_PRICE_RESPONSE', price: number }
+  | { type: 'SERVER_BASE_PRICE_RESPONSE', price: number | null }
+  | { type: 'CALENDAR_UPDATED_RESPONSE', changed: boolean };

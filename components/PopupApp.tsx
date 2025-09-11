@@ -25,6 +25,7 @@ export const PopupApp: React.FC = () => {
   }]);
   const [selectedIndexes, setSelectedIndexes] = useState<Record<number, boolean>>({ 0: true });
   const [isPairsMode, setIsPairsMode] = useState<boolean>(false);
+  const [apiToken, setApiToken] = useState<string>('');
 
   useEffect(() => {
 
@@ -175,6 +176,14 @@ export const PopupApp: React.FC = () => {
           <div className="space-y-3">
             <div className="space-y-3">
               <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+                <div className="text-sm font-semibold mb-2">API Settings</div>
+                <input
+                  type="password"
+                  value={apiToken}
+                  onChange={(e) => setApiToken(e.target.value)}
+                  placeholder="PriceLabs API Token"
+                  className="w-full mb-3 px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
                 <div className="text-sm font-semibold mb-2">Link Pairs</div>
                 <div className="text-xs text-gray-400 mb-2">System will automatically navigate to PriceLabs first</div>
                 {pairs.map((pair, idx) => (
@@ -195,6 +204,7 @@ export const PopupApp: React.FC = () => {
                         placeholder="Airbnb Multicalendar URL"
                         className="w-full px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
+                      {/* Max price input removed; we use max from API GET */}
                     </div>
                   </div>
                 ))}
@@ -205,7 +215,7 @@ export const PopupApp: React.FC = () => {
                   onClick={() => {
                     const selectedPairs = pairs.filter((_, idx) => !!selectedIndexes[idx]);
                     console.log('🚀 POPUP DEBUG: Start with pairs clicked. Selected:', selectedPairs);
-                    chrome.runtime.sendMessage({ type: 'START_WORKFLOW_WITH_PAIRS', selectedPairs });
+                    chrome.runtime.sendMessage({ type: 'START_WORKFLOW_WITH_PAIRS', selectedPairs, apiToken });
                   }}
                   className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-lg"
                 >

@@ -366,6 +366,7 @@ const getBasePriceInput = async (): Promise<HTMLInputElement> => {
 
 const getSaveRefreshButton = async (): Promise<HTMLElement> => {
     await saveLog('🔍 Looking for Save & Refresh button...');
+    console.log('🔍 Looking for Save & Refresh button...');
 
     // OPTIMIZED: Try selectors with much shorter timeout (500ms instead of 3000ms)
     const selectors = [
@@ -374,37 +375,111 @@ const getSaveRefreshButton = async (): Promise<HTMLElement> => {
         'button[id="save-and-refresh-button"]',
         'button[id="save-and-refresh"]',
         'button[data-testid="save-refresh-button"]',
-        'button[id="save-refresh-button"]'
+        'button[id="save-refresh-button"]',
+        'button#rp-save-and-refresh',
+        '#rp-save-and-refresh',
+        'button[qa-id="save-and-refresh"]'
     ];
 
     for (const selector of selectors) {
         try {
+            console.log(`- Trying selector: ${selector}`);
             // Reduced from 3000ms to 500ms to speed up detection
             const button = await waitForElement(selector, 500) as HTMLElement;
             if (button) {
                 await saveLog('✅ Found Save & Refresh button with selector:', selector);
+                console.log(`✅ Found Save & Refresh button with selector: ${selector}`, button);
                 return button;
             }
-    } catch {
+        } catch {
             // Skip logging to avoid spam - only log successful finds
         }
     }
 
     // Fallback: search by button text content (optimized - no retry delays)
     await saveLog('🔍 Trying text-based detection for Save & Refresh button...');
+    console.log('🔍 Trying text-based detection for Save & Refresh button...');
 
     const buttons = Array.from(document.querySelectorAll('button'));
     await saveLog(`📊 Found ${buttons.length} buttons on page`);
+    console.log(`📊 Found ${buttons.length} buttons on page`);
 
     for (const btn of buttons) {
         const text = btn.textContent?.toLowerCase() || '';
         if (text.includes('save') && (text.includes('refresh') || text.includes('&'))) {
             await saveLog('✅ Found Save & Refresh button by text content:', btn.textContent);
+            console.log('✅ Found Save & Refresh button by text content:', btn.textContent, btn);
             return btn as HTMLElement;
         }
     }
 
     throw new Error('Save & Refresh button not found. Please ensure you are on the PriceLabs pricing page.');
+};
+
+const setInput = (el: HTMLInputElement | HTMLTextAreaElement, val: string) => {
+    const ownerWin = el.ownerDocument && el.ownerDocument.defaultView ? el.ownerDocument.defaultView : window;
+    const proto = el.tagName === 'TEXTAREA' ? ownerWin.HTMLTextAreaElement.prototype : ownerWin.HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    if (setter) {
+        setter.call(el, val);
+    } else {
+        // Fallback for browsers that don't support this
+        (el as any).value = val;
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+};
+
+const realClick = (el: HTMLElement) => {
+    ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type =>
+        el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }))
+    );
+};
+
+const sendKey = (el: HTMLElement, key: string) => {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
+};
+
+const waitForButtonEnabled = async (button: HTMLElement, timeoutMs: number = 15000) => {
+    const start = Date.now();
+    const isDisabled = () => (button as HTMLButtonElement).disabled || button.getAttribute('aria-disabled') === 'true' || getComputedStyle(button).pointerEvents === 'none';
+    while (isDisabled()) {
+        console.log('⏳ Save & Refresh appears disabled; waiting...');
+        await new Promise(res => setTimeout(res, 250));
+        if (Date.now() - start > timeoutMs) {
+            console.warn('⌛ Timed out waiting for Save & Refresh to enable');
+            break;
+        }
+    }
+};
+
+const waitForSaveCompletion = async (button: HTMLElement, timeoutMs: number = 20000) => {
+    const start = Date.now();
+    let seenBusy = false;
+    console.log('🎯 Waiting for save completion signals (toast or loading toggle)');
+    while (Date.now() - start < timeoutMs) {
+        const disabled = (button as HTMLButtonElement).disabled || button.hasAttribute('disabled') || button.getAttribute('aria-disabled') === 'true';
+        const dataLoadingAttr = button.getAttribute('data-loading');
+        const dataLoading = dataLoadingAttr === 'true' || button.hasAttribute('data-loading');
+        const busy = disabled || dataLoading;
+        if (busy && !seenBusy) {
+            console.log('📡 Button entered loading state', { disabled, dataLoadingAttr });
+            seenBusy = true;
+        }
+        if (seenBusy && !busy) {
+            console.log('✅ Button loading finished');
+            return;
+        }
+        const toast = document.querySelector('[role="status"], [data-status], .chakra-toast, .Toastify__toast--success');
+        const toastText = (toast && (toast.textContent || '').trim()) || '';
+        if (toast && /saved|refresh|updated|success/i.test(toastText)) {
+            console.log('✅ Detected success toast:', toastText);
+            return;
+        }
+        await new Promise(res => setTimeout(res, 250));
+    }
+    console.warn('⌛ No explicit completion signal within timeout');
 };
 
 const getSyncNowButton = async (): Promise<HTMLElement> => {
@@ -2602,237 +2677,8 @@ const marketResearchStep7Complete = async (): Promise<void> => {
 // AIRBNB PRICE TIPS EXTRACTION FUNCTIONS
 
 const scrollCalendarToLoadAllMonths = async (): Promise<void> => {
-    await saveLog('📜 Starting comprehensive calendar scrolling to load ALL months...');
-
-    try {
-        // STEP 1: Find Airbnb-specific calendar container
-        const airbnbCalendarSelectors = [
-            // Airbnb specific selectors
-            '[data-testid*="calendar"]',
-            '[data-testid*="date-range-picker"]',
-            '[data-testid*="datepicker"]',
-            '[data-testid*="availability-calendar"]',
-            '[data-section-id*="calendar"]',
-            '[data-section-id*="availability"]',
-            // Generic calendar selectors
-            '[role="grid"]',
-            '.calendar',
-            '[class*="calendar"]',
-            '.CalendarMonthGrid',
-            '.CalendarMonthGrid_month__horizontal',
-            '[class*="CalendarMonth"]',
-            '[class*="month-grid"]',
-            // Airbnb multicalendar specific
-            '[data-testid*="multicalendar"]',
-            '[data-testid*="calendar-month"]',
-            // Fallback selectors
-            '[class*="month"]',
-            '[class*="Month"]'
-        ];
-
-        let calendarContainer: Element | null = null;
-        let bestSelector = '';
-
-        // Try Airbnb-specific selectors first
-        for (const selector of airbnbCalendarSelectors) {
-            const elements = document.querySelectorAll(selector);
-            await saveLog(`🔍 Checking selector "${selector}": found ${elements.length} elements`);
-
-            if (elements.length > 0) {
-                // Find the best calendar container
-                for (const element of elements) {
-                    const rect = element.getBoundingClientRect();
-                    const computedStyle = window.getComputedStyle(element);
-
-                    // Check if element is visible and reasonably sized
-                    if (rect.width > 200 && rect.height > 150 &&
-                        computedStyle.display !== 'none' &&
-                        computedStyle.visibility !== 'hidden') {
-
-                        // Prefer elements with more content (likely the main calendar)
-                        const childCount = element.children.length;
-                        const textLength = element.textContent?.length || 0;
-
-                        await saveLog(`📅 Candidate: ${selector} - Size: ${rect.width}x${rect.height}, Children: ${childCount}, Text: ${textLength}`);
-
-                        // If this is a better candidate (more content), use it
-                        if (!calendarContainer ||
-                            childCount > calendarContainer.children.length ||
-                            textLength > (calendarContainer.textContent?.length || 0)) {
-                            calendarContainer = element;
-                            bestSelector = selector;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (calendarContainer) {
-            await saveLog(`🎯 Selected calendar container: ${bestSelector}`);
-            const rect = calendarContainer.getBoundingClientRect();
-            await saveLog(`📐 Container size: ${rect.width}x${rect.height}, Position: (${rect.left}, ${rect.top})`);
-        } else {
-            await saveLog('⚠️ No suitable calendar container found, trying broader search...');
-
-            // Broader search for any scrollable container
-            const allScrollableElements = Array.from(document.querySelectorAll('*')).filter(el => {
-                const style = window.getComputedStyle(el);
-                return style.overflow === 'auto' || style.overflow === 'scroll' ||
-                       style.overflowY === 'auto' || style.overflowY === 'scroll';
-            });
-
-            await saveLog(`🔍 Found ${allScrollableElements.length} scrollable elements`);
-
-            // Find the largest scrollable container
-            let largestScrollable: Element | null = null;
-            let largestArea = 0;
-
-            for (const el of allScrollableElements) {
-                const rect = el.getBoundingClientRect();
-                const area = rect.width * rect.height;
-                if (area > largestArea && rect.width > 300 && rect.height > 200) {
-                    largestArea = area;
-                    largestScrollable = el;
-                }
-            }
-
-            if (largestScrollable) {
-                calendarContainer = largestScrollable;
-                await saveLog('🎯 Using largest scrollable container as fallback');
-            } else {
-                await saveLog('⚠️ No scrollable container found, using document body...');
-                calendarContainer = document.body;
-            }
-        }
-
-        // STEP 2: Enhanced scrolling strategy
-        let previousHeight = calendarContainer.scrollHeight;
-        let scrollAttempts = 0;
-        const maxScrollAttempts = 30; // Increased for more thorough loading
-        let consecutiveNoChange = 0;
-        const maxConsecutiveNoChange = 3;
-
-        await saveLog(`📏 Initial container height: ${previousHeight}px`);
-        await saveLog(`📏 Container scrollHeight: ${calendarContainer.scrollHeight}px`);
-
-        // Try multiple scrolling strategies
-        while (scrollAttempts < maxScrollAttempts && consecutiveNoChange < maxConsecutiveNoChange) {
-            const currentTop = calendarContainer.scrollTop;
-            const targetScrollTop = calendarContainer.scrollHeight;
-
-            await saveLog(`📜 Scroll attempt ${scrollAttempts + 1}/${maxScrollAttempts}`);
-            await saveLog(`📍 Current scrollTop: ${currentTop}px, Target: ${targetScrollTop}px`);
-
-            // Scroll to bottom
-            calendarContainer.scrollTo({
-                top: targetScrollTop,
-                behavior: 'smooth'
-            });
-
-            // Wait longer for Airbnb's lazy loading
-            await new Promise(resolve => setTimeout(resolve, 3000));
-
-            const newHeight = calendarContainer.scrollHeight;
-            const heightChange = newHeight - previousHeight;
-
-            await saveLog(`📏 Height changed from ${previousHeight}px to ${newHeight}px (+${heightChange}px)`);
-
-            if (heightChange < 10) {
-                consecutiveNoChange++;
-                await saveLog(`⚠️ No significant height change (${consecutiveNoChange}/${maxConsecutiveNoChange})`);
-            } else {
-                consecutiveNoChange = 0;
-                await saveLog('✅ Height increased - more content loaded');
-            }
-
-            previousHeight = newHeight;
-            scrollAttempts++;
-
-            // Additional wait for any delayed loading
-            if (scrollAttempts % 5 === 0) {
-                await saveLog('⏳ Taking extended break for loading...');
-                await new Promise(resolve => setTimeout(resolve, 2000));
-            }
-        }
-
-        // STEP 3: Try clicking "next month" buttons if available
-        await saveLog('🔍 Looking for next month navigation buttons...');
-        const nextButtonSelectors = [
-            '[data-testid*="next"]',
-            '[data-testid*="chevron-right"]',
-            '[aria-label*="next"]',
-            '[aria-label*="Next"]',
-            'button[title*="next"]',
-            'button[title*="Next"]',
-            '.calendar-next',
-            '.next-month',
-            '[class*="next"]',
-            '[class*="chevron-right"]'
-        ];
-
-        let nextButtonClicked = false;
-        for (const selector of nextButtonSelectors) {
-            const buttons = document.querySelectorAll(selector);
-            if (buttons.length > 0) {
-                for (const button of buttons) {
-                    const isVisible = (button as HTMLElement).offsetParent !== null;
-                    const isEnabled = !(button as HTMLButtonElement).disabled;
-
-                    if (isVisible && isEnabled) {
-                        await saveLog(`🎯 Found next button: ${selector}`);
-                        (button as HTMLElement).click();
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                        nextButtonClicked = true;
-                        break;
-                    }
-                }
-                if (nextButtonClicked) break;
-            }
-        }
-
-        if (nextButtonClicked) {
-            await saveLog('✅ Clicked next month button - additional months may have loaded');
-        } else {
-            await saveLog('ℹ️ No next month buttons found or clickable');
-        }
-
-        // STEP 4: Final scroll to ensure all content is visible
-        await saveLog('📍 Scrolling to top for final extraction...');
-        calendarContainer.scrollTo({
-            top: 0,
-            behavior: 'smooth'
-        });
-
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        // STEP 5: Report final statistics
-        const finalHeight = calendarContainer.scrollHeight;
-        const allCalendarElements = document.querySelectorAll('[data-testid*="calendar"], [class*="calendar"], [class*="month"]');
-        const allDayElements = document.querySelectorAll('[data-testid*="day"], [class*="day"], [role="gridcell"]');
-
-        await saveLog('📊 FINAL CALENDAR STATISTICS:');
-        await saveLog(`📏 Final container height: ${finalHeight}px`);
-        await saveLog(`📅 Calendar containers found: ${allCalendarElements.length}`);
-        await saveLog(`📆 Day elements found: ${allDayElements.length}`);
-
-        // Count unique months by looking for month headers
-        const monthHeaders = document.querySelectorAll('[data-testid*="month"], [class*="month"], h2, [role="heading"]');
-        await saveLog(`📅 Month headers found: ${monthHeaders.length}`);
-
-        for (let i = 0; i < Math.min(monthHeaders.length, 10); i++) {
-            const header = monthHeaders[i];
-            const text = header.textContent?.trim();
-            if (text) {
-                await saveLog(`📅 Month ${i + 1}: ${text}`);
-            }
-        }
-
-        await saveLog('✅ Enhanced calendar scrolling completed - maximum months should now be loaded');
-
-    } catch (error) {
-        await saveLog(`❌ Error during enhanced calendar scrolling: ${error}`);
-        // Continue with extraction even if scrolling fails
-    }
+  // Logic now handled in background.ts
+  await saveLog('Zoom and fullscreen now handled in background script.');
 };
 
 const extractPriceTipsData = async (): Promise<Array<{
@@ -3202,77 +3048,58 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                 }
                 case 'INCREASE_BASE_PRICE': {
                     await saveLog('💰 INCREASE_BASE_PRICE: Starting base price increase by $100');
-
-                    // Get current base price
-                    const input = await getBasePriceInput();
-                    const currentValue = input.value;
-                    const currentPrice = parseFloat(currentValue.replace(/[^0-9.-]/g, ''));
-
-                    if (isNaN(currentPrice)) {
-                        await saveLog('❌ INCREASE_BASE_PRICE: Could not parse current price:', currentValue);
-                        throw new Error(`Could not parse current base price from value "${currentValue}"`);
-                    }
-
-                    await saveLog('📊 INCREASE_BASE_PRICE: Current price:', currentPrice);
-
-                    // Increase by $100
-                    const newPrice = currentPrice + 100;
-                    await saveLog('💰 INCREASE_BASE_PRICE: New price will be:', newPrice);
-
-                    // Set the new price
-                    input.click();
+                    const input = await findBasePriceInputAttempt();
+                    const currentValue = parseFloat(input.value);
+                    await saveLog('📊 INCREASE_BASE_PRICE: Current price:', currentValue);
+                    const newValue = currentValue + 100;
+                    await saveLog('💰 INCREASE_BASE_PRICE: New price will be:', newValue);
+                    console.log('📝 setState(newValue):', newValue);
                     input.focus();
-                    input.value = newPrice.toString();
-
-                    // Dispatch events to ensure the web app framework detects the change
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-
-                    await saveLog('✅ INCREASE_BASE_PRICE: Successfully increased base price from', currentPrice, 'to', newPrice);
-
-                    // Wait a moment for the change to register
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
+                    setInput(input, newValue.toString());
+                    sendKey(input, 'Enter');
+                    input.blur();
+                    await saveLog('✅ INCREASE_BASE_PRICE: Successfully increased base price from', currentValue);
                     return { type: 'SUCCESS' };
                 }
                 case 'DECREASE_BASE_PRICE': {
                     await saveLog('💰 DECREASE_BASE_PRICE: Starting base price decrease by -$100');
-
-                    // Get current base price
-                    const input = await getBasePriceInput();
-                    const currentValue = input.value;
-                    const currentPrice = parseFloat(currentValue.replace(/[^0-9.-]/g, ''));
-
-                    if (isNaN(currentPrice)) {
-                        await saveLog('❌ DECREASE_BASE_PRICE: Could not parse current price:', currentValue);
-                        throw new Error(`Could not parse current base price from value "${currentValue}"`);
-                    }
-
-                    await saveLog('📊 DECREASE_BASE_PRICE: Current price:', currentPrice);
-
-                    // Decrease by -$100
-                    const newPrice = currentPrice - 100;
-                    await saveLog('💰 DECREASE_BASE_PRICE: New price will be:', newPrice);
-
-                    // Set the new price
-                    input.click();
+                    const input = await findBasePriceInputAttempt();
+                    const currentValue = parseFloat(input.value);
+                    await saveLog('📊 DECREASE_BASE_PRICE: Current price:', currentValue);
+                    const newValue = currentValue - 100;
+                    await saveLog('💰 DECREASE_BASE_PRICE: New price will be:', newValue);
+                    console.log('📝 setState(newValue):', newValue);
                     input.focus();
-                    input.value = newPrice.toString();
-
-                    // Dispatch events to ensure the web app framework detects the change
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-
-                    await saveLog('✅ DECREASE_BASE_PRICE: Successfully decreased base price from', currentPrice, 'to', newPrice);
-
-                    // Wait a moment for the change to register
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
+                    setInput(input, newValue.toString());
+                    sendKey(input, 'Enter');
+                    input.blur();
+                    await saveLog('✅ DECREASE_BASE_PRICE: Successfully decreased base price from', currentValue);
                     return { type: 'SUCCESS' };
                 }
                 case 'CLICK_SAVE_REFRESH': {
+                    await saveLog('🚀 CLICK_SAVE_REFRESH: Preparing to click Save & Refresh');
                     const button = await getSaveRefreshButton();
-                    button.click();
+                    console.log('🎛️ handleEvent called: about to click Save & Refresh', {
+                        id: (button as HTMLElement).id,
+                        disabled: (button as HTMLButtonElement).disabled,
+                        ariaDisabled: button.getAttribute('aria-disabled'),
+                        text: button.textContent
+                    });
+                    button.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    (button as HTMLElement).focus();
+                    await waitForButtonEnabled(button);
+                    console.log('📡 API call: realClick Save & Refresh');
+                    realClick(button);
+                    console.log('✅ CLICK_SAVE_REFRESH: Click dispatched');
+                    await waitForSaveCompletion(button);
+                    try {
+                        const inputAfter = await getBasePriceInput();
+                        const raw = inputAfter.value;
+                        const parsed = parseFloat(raw.replace(/[^0-9.-]/g, ''));
+                        console.log('🧪 Post-save UI base price:', { raw, parsed });
+                    } catch (e) {
+                        console.log('⚠️ Post-save UI base price read failed', e);
+                    }
                     return { type: 'SUCCESS' };
                 }
                 case 'CLICK_SYNC_NOW': {
@@ -3477,7 +3304,119 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     await createAndDownloadExtensionZip();
 
                     await saveLog('✅ Extension zip file created and downloaded');
+                    
                     return { type: 'SUCCESS' };
+                }
+                case 'READ_SERVER_BASE_PRICE': {
+                    try {
+                        const listingIdMatch = location.search.match(/listings=(\d+)/);
+                        const listingId = listingIdMatch ? listingIdMatch[1] : '';
+                        const url = `/api/fetch_customizations?listingId=${listingId}&pmsName=airbnb&currency=USD`;
+                        const res = await fetch(url, { credentials: 'include' });
+                        const json = await res.json();
+                        // Heuristic: try common fields
+                        let serverPrice: number | null = null;
+                        const tryFields = ['basePrice', 'base_price', 'defaultBasePrice', 'default_base_price'];
+                        const searchObj = (obj: any): number | null => {
+                            if (!obj || typeof obj !== 'object') return null;
+                            for (const k of Object.keys(obj)) {
+                                if (tryFields.includes(k) && typeof obj[k] === 'number') return obj[k];
+                                const v = obj[k];
+                                if (v && typeof v === 'object') {
+                                    const found = searchObj(v);
+                                    if (found !== null) return found;
+                                }
+                            }
+                            return null;
+                        };
+                        serverPrice = searchObj(json);
+                        console.log('🛰️ Server customizations parsed base price:', serverPrice);
+                        return { type: 'SERVER_BASE_PRICE_RESPONSE', price: serverPrice } as any;
+                    } catch (e) {
+                        console.log('⚠️ READ_SERVER_BASE_PRICE failed', e);
+                        return { type: 'SERVER_BASE_PRICE_RESPONSE', price: null } as any;
+                    }
+                }
+                case 'SNAPSHOT_CALENDAR_PRICES': {
+                    try {
+                        const cells = Array.from(document.querySelectorAll('[data-testid="calendar-cell"],[role="gridcell"]')) as HTMLElement[];
+                        const extractPrice = (cell: HTMLElement): number | null => {
+                            const text = (cell.textContent || '').trim();
+                            // Prefer currency-marked values
+                            const currencyMatch = text.match(/[£$€]\s?([0-9]{2,4})/);
+                            if (currencyMatch) {
+                                const v = parseInt(currencyMatch[1], 10);
+                                if (Number.isFinite(v)) return v;
+                            }
+                            // Fallback: find all standalone numbers and pick a plausible nightly rate
+                            const nums = Array.from(text.matchAll(/\b([0-9]{2,4})\b/g)).map(m => parseInt(m[1], 10)).filter(n => Number.isFinite(n));
+                            const plausible = nums.filter(n => n >= 30 && n <= 5000);
+                            if (plausible.length > 0) return Math.max(...plausible);
+                            return null;
+                        };
+                        const prices = cells.map(extractPrice).filter((v): v is number => v !== null);
+                        const sample = prices.slice(0, 50);
+                        console.log('📸 Calendar snapshot prices (sample):', sample);
+                        (window as any).__pcpCalendarSnapshot = sample;
+                        return { type: 'SUCCESS' };
+                    } catch (e) {
+                        console.log('⚠️ SNAPSHOT_CALENDAR_PRICES failed', e);
+                        return { type: 'SUCCESS' };
+                    }
+                }
+                case 'CHECK_CALENDAR_UPDATED': {
+                    try {
+                        const before: number[] = (window as any).__pcpCalendarSnapshot || [];
+                        const cells = Array.from(document.querySelectorAll('[data-testid="calendar-cell"],[role="gridcell"]')) as HTMLElement[];
+                        const extractPrice = (cell: HTMLElement): number | null => {
+                            const text = (cell.textContent || '').trim();
+                            const currencyMatch = text.match(/[£$€]\s?([0-9]{2,4})/);
+                            if (currencyMatch) {
+                                const v = parseInt(currencyMatch[1], 10);
+                                if (Number.isFinite(v)) return v;
+                            }
+                            const nums = Array.from(text.matchAll(/\b([0-9]{2,4})\b/g)).map(m => parseInt(m[1], 10)).filter(n => Number.isFinite(n));
+                            const plausible = nums.filter(n => n >= 30 && n <= 5000);
+                            if (plausible.length > 0) return Math.max(...plausible);
+                            return null;
+                        };
+                        const prices = cells.map(extractPrice).filter((v): v is number => v !== null);
+                        const sample = prices.slice(0, 50);
+                        const changed = before.length > 0 && sample.length > 0 && (sample.length !== before.length || sample.some((v, i) => v !== before[i]));
+                        console.log('🔁 Calendar updated?', changed, 'before:', before.slice(0, 10), 'after:', sample.slice(0, 10));
+                        return { type: 'CALENDAR_UPDATED_RESPONSE', changed } as any;
+                    } catch (e) {
+                        console.log('⚠️ CHECK_CALENDAR_UPDATED failed', e);
+                        return { type: 'CALENDAR_UPDATED_RESPONSE', changed: false } as any;
+                    }
+                }
+                case 'FORCE_CALENDAR_RERENDER': {
+                    try {
+                        // Try month navigation buttons
+                        const nextBtn = document.querySelector('[aria-label*="next" i],button[qa-id*="next" i]') as HTMLElement | null;
+                        const prevBtn = document.querySelector('[aria-label*="prev" i],button[qa-id*="prev" i]') as HTMLElement | null;
+                        if (nextBtn && prevBtn) {
+                            nextBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                            await new Promise(r => setTimeout(r, 800));
+                            prevBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                            await new Promise(r => setTimeout(r, 800));
+                            console.log('🔄 Forced calendar rerender via month navigation');
+                            return { type: 'SUCCESS' };
+                        }
+                        // Fallback: toggle a known filter checkbox if available
+                        const syncToggle = document.getElementById('rp-sync-toggle') as HTMLInputElement | null;
+                        if (syncToggle) {
+                            syncToggle.click();
+                            await new Promise(r => setTimeout(r, 500));
+                            syncToggle.click();
+                            await new Promise(r => setTimeout(r, 500));
+                            console.log('🔄 Forced calendar rerender via sync toggle');
+                        }
+                        return { type: 'SUCCESS' };
+                    } catch (e) {
+                        console.log('⚠️ FORCE_CALENDAR_RERENDER failed', e);
+                        return { type: 'SUCCESS' };
+                    }
                 }
                 default:
                     // This is a type-level check to ensure all message types are handled.

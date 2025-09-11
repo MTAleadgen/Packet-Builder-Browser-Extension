@@ -7,10 +7,13 @@
     "storage",
     "tabs",
     "scripting",
-    "downloads"
+    "downloads",
+    "windows",
+    "debugger"
   ],
   "host_permissions": [
     "https://app.pricelabs.co/*",
+    "https://api.pricelabs.co/*",
     "https://www.airbnb.com/*",
     "https://www.airbnb.co.uk/*",
     "https://www.airbnb.ca/*",
