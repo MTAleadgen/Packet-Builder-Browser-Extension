@@ -156,9 +156,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             break;
             
         case 'CANCEL_GATHERING':
+            console.log('🛑 WORKFLOW CANCEL: Stopping current workflow process');
+            persistLog('🛑 WORKFLOW CANCEL: User clicked Stop Workflow button.');
+            // Set flag to stop any running workflow
+            chrome.storage.local.set({ workflow_cancelled: true }, () => {
+                console.log('🛑 WORKFLOW CANCEL: Cancel flag set in storage');
+                persistLog('🛑 WORKFLOW CANCEL: workflow_cancelled flag SET to TRUE in storage.');
+            });
+
             updateState({
                 status: WorkflowStatus.IDLE,
-                message: 'Cancelled by user.',
+                message: 'Workflow cancelled by user. Extension popup remains open.',
                 step: 1
             });
             break;
@@ -1063,6 +1071,9 @@ async function startWorkflow() {
 async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
     if (state.status === WorkflowStatus.RUNNING) return;
     try {
+        await chrome.storage.local.set({ workflow_cancelled: false });
+        console.log('🚀 WORKFLOW: Initialized new workflow, cancel flag cleared.');
+        await persistLog('🚀 WORKFLOW: Initialized new workflow, cancel flag cleared.');
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab || !tab.id) throw new Error('No active tab found.');
         originalTabId = tab.id;
@@ -1117,104 +1128,91 @@ async function proceedAfterInitialSteps() {
     // Step 4: Sync Now
     await updateState({ step: 4, message: 'Step 4: Clicking Sync Now button...' });
     await sendMessageToTab(originalTabId, { type: 'SYNC_NOW' });
-    await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 1s -> 2s
+    await new Promise(res => setTimeout(res, 0)); // USER CHANGE: 2s -> 0s
 
     // Step 5: Edit Button
     await updateState({ step: 5, message: 'Step 5: Clicking Edit button...' });
     await sendMessageToTab(originalTabId, { type: 'EDIT_BUTTON' });
-    await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 1s -> 2s
+    await new Promise(res => setTimeout(res, 0)); // USER CHANGE: 2s -> 0s
 
     // Step 6: First "Edit Profile" button on main page
     await updateState({ step: 6, message: 'Step 6: Clicking first Edit Profile button...' });
     await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
-    await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 1s -> 2s
+    await new Promise(res => setTimeout(res, 0)); // USER CHANGE: 2s -> 0s
 
     // Step 7: "Edit Profile" button IN THE POPUP
     await updateState({ step: 7, message: 'Step 7: Clicking Edit Profile button in popup...' });
     await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
-    await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 1s -> 2s
+    await new Promise(res => setTimeout(res, 0)); // USER CHANGE: 2s -> 0s
 
     // Step 8: "Download" button IN THE POPUP
     await updateState({ step: 8, message: 'Step 8: Clicking Download button...' });
     await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_6_DOWNLOAD' });
     await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 3s -> 2s
 
-    // Step 9: Close the popup
-    await updateState({ step: 9, message: 'Step 9: Closing popup...' });
-    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_7_CLOSE_POPUP' });
-    await new Promise(res => setTimeout(res, 3000)); // NO CHANGE
-
-    // Step 10: Clicking Dynamic Pricing dropdown
-    await updateState({ step: 10, message: 'Step 10: Clicking Dynamic Pricing dropdown...' });
-    await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_1_DYNAMIC_PRICING' });
-    await new Promise(res => setTimeout(res, 1000)); // USER CHANGE: 3s -> 1s
-
-    // Step 11: Navigate to Customizations page
-    await updateState({ step: 11, message: 'Step 11: Navigating to Customizations page...' });
-    try {
-        // This message will likely fail because the page navigates. Set retries to 0 to prevent long delays.
-        await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_2_CUSTOMIZATIONS' }, 0);
-    } catch (navigationError) {
-        console.log('📍 EXPECTED: Content script disconnected during Customizations navigation.');
+    // Step 9: Navigate directly to Customizations page
+    await updateState({ step: 9, message: 'Step 9: Navigating directly to Customizations page...' });
+    console.log('🔄 WORKFLOW: Navigating to https://app.pricelabs.co/customization');
+    await persistLog('🔄 WORKFLOW: Navigating directly to Customizations page.');
+    if (originalTabId) {
+        await chrome.tabs.update(originalTabId, { url: 'https://app.pricelabs.co/customization' });
     }
-    // Wait for the navigation to complete, then re-inject the script for the next step.
-    await new Promise(res => setTimeout(res, 2000)); // USER-DEFINED WAIT: 2s
-    await injectScript(originalTabId);
+    
+    // Wait for the navigation to complete and for the content script to auto-inject.
+    console.log('⏳ WORKFLOW: Waiting for Customizations navigation to complete.');
     await waitForTabLoad(originalTabId);
+    await new Promise(res => setTimeout(res, 1000)); // Wait 1s for page to fully load and stabilize.
+    console.log('✅ WORKFLOW: Tab loaded, content script should be active.');
 
-
-    // Step 12: Select Listings tab
-    await updateState({ step: 12, message: 'Customizations Step 1: Selecting Listings tab...' });
+    // Step 10: Select Listings tab
+    await updateState({ step: 10, message: 'Customizations Step 1: Selecting Listings tab...' });
+    console.log('🔄 WORKFLOW: Sending CUSTOMIZATIONS_STEP_1_LISTINGS');
     await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_1_LISTINGS' });
     await new Promise(res => setTimeout(res, 1000)); // USER CHANGE: 3s -> 1s
 
-    // Step 13: Select Table View
-    await updateState({ step: 13, message: 'Customizations Step 2: Selecting Table View...' });
+    // Step 11: Select Table View
+    await updateState({ step: 11, message: 'Customizations Step 2: Selecting Table View...' });
     await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_2_TABLE_VIEW' });
     await new Promise(res => setTimeout(res, 1000)); // USER CHANGE: 3s -> 1s
 
-    // Step 14: Download All as CSV
-    await updateState({ step: 14, message: 'Customizations Step 3: Downloading all as CSV...' });
+    // Step 12: Download All as CSV
+    await updateState({ step: 12, message: 'Customizations Step 3: Downloading all as CSV...' });
     await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_3_DOWNLOAD_ALL' });
     await new Promise(res => setTimeout(res, 3000)); // NO CHANGE
 
-    // Step 15: Select Market Research dropdown
-    await updateState({ step: 15, message: 'Step 15: Selecting Market Research dropdown...' });
-    await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_1_DROPDOWN' });
-    await new Promise(res => setTimeout(res, 1000)); // USER CHANGE: 3s -> 1s
+    // Step 13: Navigate directly to Market Research reports page
+    await updateState({ step: 13, message: 'Step 13: Navigating directly to Market Research...' });
+    console.log('🔄 WORKFLOW: Navigating to https://app.pricelabs.co/reports');
+    await persistLog('🔄 WORKFLOW: Navigating directly to Market Research reports page.');
+    if (originalTabId) {
+        await chrome.tabs.update(originalTabId, { url: 'https://app.pricelabs.co/reports' });
+    }
+    
+    // Wait for the navigation to complete.
+    console.log('⏳ WORKFLOW: Waiting for Market Research navigation to complete.');
+    await waitForTabLoad(originalTabId);
+    await new Promise(res => setTimeout(res, 2000)); // Wait 2s for page to fully load and stabilize.
+    console.log('✅ WORKFLOW: Tab loaded, content script should be active.');
 
-    // Step 16: Click "Market Dashboard" (Navigates)
-    await updateState({ step: 16, message: 'Step 16: Selecting Market Dashboard (navigation expected)...' });
+    // Step 14 & 15: Show Dashboard & wait for it to load
+    await updateState({ step: 14, message: 'Step 14: Clicking Show Dashboard...' });
     try {
-        // This message will likely fail because the page navigates. Set retries to 0 to prevent long delays.
-        await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_2_MARKET_DASHBOARD' }, 0);
-    } catch (navigationError) {
-        console.log('📍 EXPECTED: Content script disconnected during navigation.');
+        await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD' });
+    } catch (error) {
+        const errorMessage = (error as Error).message || String(error);
+        console.log(`🟡 INFO: Caught error during 'Show Dashboard' click, which is sometimes expected if the page reloads. Error: ${errorMessage}`);
+        await persistLog(`🟡 INFO: Caught error during 'Show Dashboard' click, assuming success. Error: ${errorMessage}`);
     }
-    console.log('⏳ Waiting for Market Research navigation to complete...');
-    await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 4s -> 2s
-    
-    // Re-inject script after navigation
-    const [navTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (navTab?.url?.includes('/reports')) {
-        console.log('✅ Successfully navigated to Market Research page, re-injecting script...');
-        await injectScript(originalTabId);
-        await waitForTabLoad(originalTabId);
-    } else {
-        throw new Error('Failed to navigate to Market Research reports page');
-    }
-    
-    // Step 17 & 18: Show Dashboard & wait for it to load
-    await updateState({ step: 17, message: 'Step 17: Clicking Show Dashboard...' });
-    await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD' });
+    await updateState({ step: 15, message: 'Step 15: Waiting for Dashboard to load...' });
+    await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10s for dashboard to load
 
-    // Step 19: Download PDF
-    await updateState({ step: 19, message: 'Step 19: Downloading as PDF...' });
+    // Step 16: Download PDF
+    await updateState({ step: 16, message: 'Step 17: Downloading as PDF...' });
     await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_6_DOWNLOAD_PDF' });
 
-    // Step 20: Wait for PDF download
-    await updateState({ step: 20, message: 'Step 20: Waiting for PDF download to start...' });
-    await new Promise(resolve => setTimeout(resolve, 30000)); // USER CHANGE: 50s -> 30s
+    // Step 17: Wait for PDF download
+    await updateState({ step: 17, message: 'Step 18: Waiting for PDF download to start...' });
+    await new Promise(resolve => setTimeout(resolve, 25000)); // USER CHANGE: 30s -> 25s
 
     // --- End of Part 2, now proceed to Airbnb ---
     await proceedToAirbnbWorkflow();
@@ -1223,39 +1221,39 @@ async function proceedAfterInitialSteps() {
 async function proceedToAirbnbWorkflow() {
     // Part 3: Airbnb Price Tips
     
-    // Step 21: Navigate to Airbnb
-    await updateState({ step: 21, message: 'Step 21: Navigating to Airbnb...' });
+    // Step 18: Navigate to Airbnb
+    await updateState({ step: 18, message: 'Step 19: Navigating to Airbnb...' });
     await navigateToAirbnbMulticalendar();
     console.log('⏳ Waiting for Airbnb page to load and stabilize...');
     await new Promise(resolve => setTimeout(resolve, 3000)); // USER CHANGE: 8s -> 3s
 
-    // Step 22: Click Price Tips button
-    await updateState({ step: 22, message: 'Step 22: Clicking Price Tips button...' });
+    // Step 19: Click Price Tips button
+    await updateState({ step: 19, message: 'Step 20: Clicking Price Tips button...' });
     await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
     didAirbnbTips = true;
     await persistLog('Airbnb: Price Tips opened');
 
-    // Step 23: Zoom out
-    await updateState({ step: 23, message: 'Step 23: Zooming out...' });
+    // Step 20: Zoom out
+    await updateState({ step: 20, message: 'Step 21: Zooming out...' });
     await zoomFull(originalTabId);
-    await new Promise(resolve => setTimeout(resolve, 2000)); // NO CHANGE
+    await new Promise(resolve => setTimeout(resolve, 0)); // USER CHANGE: 2s -> 0s
     
-    // Step 24: Extract price tips data
-    await updateState({ step: 24, message: 'Step 24: Extracting price tips data...' });
+    // Step 21: Extract price tips data
+    await updateState({ step: 21, message: 'Step 22: Extracting price tips data...' });
     const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
     const priceData = extractionResult.data || [];
 
-    // Step 25: Export to CSV
-    await updateState({ step: 25, message: 'Step 25: Exporting price tips to CSV...' });
+    // Step 22: Export to CSV
+    await updateState({ step: 22, message: 'Step 23: Exporting price tips to CSV...' });
     await sendMessageToTab(originalTabId, { type: 'EXPORT_PRICE_TIPS_CSV', priceData });
     await persistLog('Workflow: CSV export completed');
     
-    // Step 26 & 27: Restore API and Zoom
-    await updateState({ step: 26, message: 'Step 26 & 27: Restoring base price and zoom...' });
+    // Step 23 & 24: Restore API and Zoom
+    await updateState({ step: 23, message: 'Step 24 & 25: Restoring base price and zoom...' });
     await restoreBaseAndZoom();
 
-    // Step 28: Navigate back to PriceLabs
-    await updateState({ step: 28, message: 'Step 28: Navigating back to PriceLabs...' });
+    // Step 25: Navigate back to PriceLabs
+    await updateState({ step: 25, message: 'Step 26: Navigating back to PriceLabs...' });
     await navigateBackToPriceLabsIfPairStored();
     
     // --- End of Part 3, now proceed to Final Sequence ---
@@ -1263,7 +1261,7 @@ async function proceedToAirbnbWorkflow() {
 }
 
 async function restoreBaseAndZoom() {
-    // Step 26: Restore Original Base Price via API
+    // Step 24: Restore Original Base Price via API
     try {
         const stored = await chrome.storage.local.get(['originalBase', 'originalListingId', 'originalPms']);
         const { originalBase, originalListingId, originalPms } = stored;
@@ -1278,7 +1276,7 @@ async function restoreBaseAndZoom() {
         await persistLog('Workflow: API restore error', { error: (e as Error)?.message });
     }
 
-    // Step 27: Restore Zoom
+    // Step 25: Restore Zoom
     try {
         await zoomRestore(originalTabId);
         await persistLog('Workflow: Zoom and window state restored');
@@ -1290,25 +1288,25 @@ async function restoreBaseAndZoom() {
 async function proceedToFinalSequence() {
     // Part 4: Final PriceLabs Sequence
 
-    // Step 29: Sync Now
-    await updateState({ step: 29, message: 'Step 29: Clicking Sync Now...' });
+    // Step 26: Sync Now
+    await updateState({ step: 26, message: 'Step 27: Clicking Sync Now...' });
     await sendMessageToTab(originalTabId, { type: 'SYNC_NOW' });
-    await new Promise(resolve => setTimeout(resolve, 1000)); // USER CHANGE: 3s -> 1s
+    await new Promise(resolve => setTimeout(resolve, 0)); // USER CHANGE: 1s -> 0s
 
-    // Step 30: Edit
-    await updateState({ step: 30, message: 'Step 30: Clicking Edit...' });
+    // Step 27: Edit
+    await updateState({ step: 27, message: 'Step 28: Clicking Edit...' });
     await sendMessageToTab(originalTabId, { type: 'EDIT_BUTTON' });
-    await new Promise(resolve => setTimeout(resolve, 1000)); // USER CHANGE: 2s -> 1s
+    await new Promise(resolve => setTimeout(resolve, 0)); // USER CHANGE: 1s -> 0s
 
-    // Step 31: Edit Profile (Main Page)
-    await updateState({ step: 31, message: 'Step 31: Clicking first Edit Profile button...' });
+    // Step 28: Edit Profile (Main Page)
+    await updateState({ step: 28, message: 'Step 29: Clicking first Edit Profile button...' });
     await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
-    await new Promise(resolve => setTimeout(resolve, 1000)); // USER CHANGE: 2s -> 1s
+    await new Promise(resolve => setTimeout(resolve, 0)); // USER CHANGE: 1s -> 0s
 
-    // Step 32: Edit Profile (Popup)
-    await updateState({ step: 32, message: 'Step 32: Clicking Edit Profile button in popup...' });
+    // Step 29: Edit Profile (Popup)
+    await updateState({ step: 29, message: 'Step 30: Clicking Edit Profile button in popup...' });
     await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
-    await new Promise(resolve => setTimeout(resolve, 1000)); // USER CHANGE: 2s -> 1s
+    await new Promise(resolve => setTimeout(resolve, 0)); // USER CHANGE: 1s -> 0s
 
     // --- FINAL WORKFLOW SUCCESS ---
     await updateState({

@@ -296,7 +296,7 @@ export const PopupApp: React.FC = () => {
               onClick={handleCancel}
               className="mt-auto w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300"
             >
-              Cancel
+              Stop Workflow
             </button>
           </div>
         );

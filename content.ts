@@ -40,6 +40,36 @@ const waitForElement = (selector: string, timeout = 10000): Promise<Element> => 
     });
 };
 
+// Helper function to check if workflow has been cancelled
+async function checkWorkflowCancelled(): Promise<boolean> {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['workflow_cancelled'], (result) => {
+            const isCancelled = result.workflow_cancelled === true;
+            console.log(`🤔 WORKFLOW CHECK: Is workflow cancelled? -> ${isCancelled}`, { value: result.workflow_cancelled });
+            resolve(isCancelled);
+        });
+    });
+}
+
+// Helper function to clear cancel flag
+async function clearWorkflowCancelled(): Promise<void> {
+    return new Promise((resolve) => {
+        chrome.storage.local.set({ workflow_cancelled: false }, () => {
+            console.log('🧹 Workflow cancel flag cleared');
+        });
+    });
+}
+
+// Helper function to throw error if cancelled
+async function throwIfCancelled(stepName: string): Promise<void> {
+    const isCancelled = await checkWorkflowCancelled();
+    if (isCancelled) {
+        console.log(`🛑 WORKFLOW CANCELLED: Stopping at ${stepName}`);
+        await saveLog(`🛑 WORKFLOW CANCELLED: Stopping at ${stepName}`);
+        throw new Error(`Workflow cancelled by user at ${stepName}`);
+    }
+}
+
 const waitForElementToDisappear = (selector: string, timeout = 10000): Promise<void> => {
     return new Promise((resolve, reject) => {
         // If the element doesn't exist to begin with, we're done.
@@ -1080,114 +1110,6 @@ const occupancyStep8Complete = async (): Promise<void> => {
     await new Promise(resolve => setTimeout(resolve, 1000)); // Brief pause
 };
 
-const navigationStep1DynamicPricing = async (): Promise<void> => {
-    console.log('📝 Navigation Step 1: Clicking Dynamic Pricing dropdown...');
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for page to settle
-    
-    // Strategy 1: Look for "Dynamic Pricing" text in clickable elements
-    const clickableElements = Array.from(document.querySelectorAll('button, a, [role="button"], div[onclick], span[onclick], [tabindex]'));
-    
-    for (const element of clickableElements) {
-        const text = element.textContent?.trim();
-        
-        if (text?.includes('Dynamic Pricing')) {
-            const isVisible = (element as HTMLElement).offsetParent !== null;
-            const isEnabled = !(element as HTMLButtonElement).disabled;
-            
-            console.log('🔍 Found Dynamic Pricing element:', {
-                text: text,
-                tagName: element.tagName,
-                className: (element as HTMLElement).className,
-                visible: isVisible,
-                enabled: isEnabled
-            });
-            
-            if (isVisible && isEnabled) {
-                console.log('🎯 FOUND DYNAMIC PRICING DROPDOWN:', text);
-                (element as HTMLElement).click();
-                console.log('✅ Clicked Dynamic Pricing dropdown');
-                return;
-            }
-        }
-    }
-    
-    // Strategy 2: Look for dropdown/menu elements that might contain "Dynamic Pricing"
-    console.log('🔍 Strategy 2: Looking for dropdown/menu elements...');
-    const menuElements = Array.from(document.querySelectorAll([
-        '[role="menuitem"]',
-        '[role="menu"]',
-        '.dropdown',
-        '.menu',
-        '[class*="dropdown"]',
-        '[class*="menu"]',
-        'nav a',
-        'nav button'
-    ].join(', ')));
-    
-    for (const element of menuElements) {
-        const text = element.textContent?.trim();
-        
-        if (text?.includes('Dynamic') || text?.includes('Pricing')) {
-            const isVisible = (element as HTMLElement).offsetParent !== null;
-            
-            console.log('🔍 Found menu element with Dynamic/Pricing:', {
-                text: text,
-                tagName: element.tagName,
-                className: (element as HTMLElement).className,
-                visible: isVisible
-            });
-            
-            if (isVisible) {
-                console.log('🎯 Clicking menu element:', text);
-                (element as HTMLElement).click();
-                console.log('✅ Clicked Dynamic Pricing menu element');
-                return;
-            }
-        }
-    }
-    
-    throw new Error('❌ Dynamic Pricing dropdown not found');
-};
-
-const navigationStep2Customizations = async (): Promise<void> => {
-    console.log('📝 Nav Step 2: Looking for "Customizations" link with new, stricter logic...');
-    await saveLog('📝 Nav Step 2: Looking for "Customizations" link');
-
-    // Wait for the dropdown menu to fully appear
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Slightly longer wait for menu
-
-    const allLinks = Array.from(document.querySelectorAll('a, [role="menuitem"]')) as HTMLElement[];
-    
-    // STRATEGY 1 (PRIORITY): Find a link with an href pointing to the customizations page.
-    for (const link of allLinks) {
-        const href = (link as HTMLAnchorElement).href || '';
-        const isVisible = link.offsetParent !== null;
-        if (isVisible && href.includes('/customization')) {
-            await saveLog(`✅ Nav Step 2: Found PERFECT MATCH by href: ${href}`);
-            console.log(`✅ Nav Step 2: Found perfect match by href: ${href}`);
-            link.click();
-            return;
-        }
-    }
-
-    // STRATEGY 2 (FALLBACK): Find by exact text match, ensuring it's not another link.
-    console.log('⚠️ Nav Step 2: Href strategy failed. Falling back to text search.');
-    for (const link of allLinks) {
-        const text = link.textContent?.trim().toLowerCase() || '';
-        const isVisible = link.offsetParent !== null;
-
-        if (isVisible && text === 'customizations') {
-            await saveLog(`✅ Nav Step 2: Found fallback match by exact text: "${text}"`);
-            console.log(`✅ Nav Step 2: Found fallback match by exact text: "${link.textContent}"`);
-            link.click();
-            return;
-        }
-    }
-
-    await saveLog('❌ Nav Step 2: All strategies failed to find a valid "Customizations" link.');
-    throw new Error('"Customizations" link not found in dropdown');
-};
-
 const navigationStep3Complete = async (): Promise<void> => {
     console.log('📝 Navigation Step 3: Completing navigation...');
     console.log('🎉 Navigation Step 3: Navigation to Customizations completed!');
@@ -1227,114 +1149,78 @@ const navigationStep3Complete = async (): Promise<void> => {
 
 const customizationsStep1Listings = async (): Promise<void> => {
     console.log('📝 Customizations Step 1: Selecting Listings tab...');
-    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for page to load
+    await throwIfCancelled('Customizations Step 1');
     
-    // Enhanced Strategy: Look for "Listings" tab with multiple approaches
-    console.log('🔍 Strategy 1: Looking for tab elements with "Listings" text...');
+    const currentUrl = window.location.href;
+    const currentTitle = document.title;
+    console.log('🔍 Customizations page context:', { url: currentUrl, title: currentTitle });
+    await saveLog(`🔍 Customizations page context: ${currentUrl} | ${currentTitle}`);
     
-    // Strategy 1: Look for "Listings" in tab elements (broader search)
-    const tabElements = Array.from(document.querySelectorAll([
-        '[role="tab"]',
-        '.tab',
-        '[class*="tab"]',
-        'button',
-        'a',
-        '[role="button"]',
-        'li a',
-        'li button',
-        'div[onclick]',
-        'span[onclick]',
-        '[tabindex]',
-        '.nav-item',
-        '[class*="nav"]'
+    await new Promise(resolve => setTimeout(resolve, 4000));
+    
+    console.log('🔍 Enhanced Strategy: Searching for Listings tab with scoring system...');
+    
+    const potentialTabs = Array.from(document.querySelectorAll([
+        'a[role="tab"]', 'button[role="tab"]',
+        '.nav-link', '.nav-item', '.tab-item',
+        'button', 'a', '[role="button"]',
+        '[class*="tab"]', '[class*="nav"]'
     ].join(', ')));
     
-    console.log('🔍 Found', tabElements.length, 'potential tab elements');
-    
-    for (let i = 0; i < tabElements.length; i++) {
-        const element = tabElements[i];
-        const text = element.textContent?.trim();
-        const isVisible = (element as HTMLElement).offsetParent !== null;
-        const isEnabled = !(element as HTMLButtonElement).disabled;
-        
-        console.log(`🔍 Tab element ${i + 1}:`, {
-            text: text,
-            tagName: element.tagName,
-            className: (element as HTMLElement).className,
-            visible: isVisible,
-            enabled: isEnabled,
-            id: (element as HTMLElement).id
-        });
-        
-        // Must be EXACTLY "Listings" (case insensitive) - not just containing it
-        if (text?.toLowerCase().trim() === 'listings') {
-            if (isVisible && isEnabled) {
-                console.log('🎯 FOUND EXACT LISTINGS TAB:', text);
-                (element as HTMLElement).click();
-                console.log('✅ Clicked Listings tab');
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for tab switch
-                return;
-            }
-        }
-    }
-    
-    // Strategy 2: Look for exact "Listings" text in clickable elements
-    console.log('🔍 Strategy 2: Searching all clickable elements for exact "Listings" text...');
-    const allClickableElements = Array.from(document.querySelectorAll('button, a, [role="button"], [role="tab"], [tabindex], [onclick], [class*="tab"]')).filter(el => {
-        const text = el.textContent?.trim().toLowerCase();
+    console.log(`🔍 Found ${potentialTabs.length} potential tab elements.`);
+    await saveLog(`🔍 Found ${potentialTabs.length} potential tab elements.`);
+
+    let bestCandidate = null;
+    let highestScore = -1;
+
+    for (const el of potentialTabs) {
+        const text = el.textContent?.trim().toLowerCase() || '';
         const isVisible = (el as HTMLElement).offsetParent !== null;
         const isEnabled = !(el as HTMLButtonElement).disabled;
-        return text === 'listings' && isVisible && isEnabled;
-    });
-    
-    console.log('🔍 Found', allClickableElements.length, 'clickable elements with exact "listings" text');
-    
-    for (const element of allClickableElements) {
-        console.log('🎯 FOUND EXACT LISTINGS ELEMENT:', {
-            text: element.textContent?.trim(),
-            tagName: element.tagName,
-            className: (element as HTMLElement).className
+
+        if (!isVisible || !isEnabled || !text.includes('listings')) {
+            continue;
+        }
+
+        let score = 0;
+        if (text === 'listings') score += 100; // Exact match
+        if (text === 'add/re-import listings') score += 50;
+        if (el.getAttribute('role') === 'tab') score += 20;
+        if ((el as HTMLElement).className.toLowerCase().includes('active')) score -= 50; // Avoid already active tabs
+
+        const elementDetails = {
+            element: el,
+            text: el.textContent?.trim(),
+            score: score,
+            tag: el.tagName,
+            id: el.id,
+            className: (el as HTMLElement).className,
+        };
+
+        console.log('🕵️‍♂️ Evaluating candidate:', elementDetails);
+        await saveLog(`🕵️‍♂️ Evaluating candidate: ${elementDetails.text} (Score: ${score})`);
+
+        if (score > highestScore) {
+            highestScore = score;
+            bestCandidate = elementDetails;
+        }
+    }
+
+    if (bestCandidate) {
+        console.log('🎯 Best candidate found:', {
+            text: bestCandidate.text,
+            score: bestCandidate.score,
+            tag: bestCandidate.tag,
         });
-        (element as HTMLElement).click();
-        console.log('✅ Clicked Listings element');
+        await saveLog(`🎯 Best candidate selected: ${bestCandidate.text} (Score: ${bestCandidate.score})`);
+        (bestCandidate.element as HTMLElement).click();
+        console.log('✅ Clicked best candidate for Listings tab.');
         await new Promise(resolve => setTimeout(resolve, 2000));
         return;
     }
     
-    // Strategy 2: Look for tab group containing accounts/groups/listings
-    console.log('🔍 Strategy 2: Looking for tab group with accounts/groups/listings...');
-    const allElements = Array.from(document.querySelectorAll('*'));
-    
-    for (const element of allElements) {
-        const text = element.textContent?.toLowerCase() || '';
-        
-        // Look for elements that contain multiple tab-like words
-        if (text.includes('accounts') && text.includes('groups') && text.includes('listings')) {
-            console.log('🔍 Found tab group container:', {
-                tagName: element.tagName,
-                className: (element as HTMLElement).className,
-                textContent: element.textContent?.substring(0, 200)
-            });
-            
-            // Look for clickable "Listings" within this container
-            const listingsElements = Array.from(element.querySelectorAll('button, a, [role="button"], [role="tab"]')).filter(el => {
-                return el.textContent?.toLowerCase().includes('listings');
-            });
-            
-            for (const listingsEl of listingsElements) {
-                const isVisible = (listingsEl as HTMLElement).offsetParent !== null;
-                const isEnabled = !(listingsEl as HTMLButtonElement).disabled;
-                
-                if (isVisible && isEnabled) {
-                    console.log('🎯 FOUND LISTINGS IN TAB GROUP:', listingsEl.textContent?.trim());
-                    (listingsEl as HTMLElement).click();
-                    console.log('✅ Clicked Listings in tab group');
-                    return;
-                }
-            }
-        }
-    }
-    
+    console.log('❌ No suitable Listings tab found with the new scoring system.');
+    await saveLog('❌ No suitable Listings tab found.');
     throw new Error('❌ Listings tab not found');
 };
 
@@ -1530,175 +1416,6 @@ const customizationsStep3DownloadAll = async (): Promise<void> => {
 const customizationsStep4Complete = async (): Promise<void> => {
     console.log('🎉 Customizations Step 4: Download customizations workflow completed!');
     await new Promise(resolve => setTimeout(resolve, 1000)); // Brief pause
-};
-
-const marketResearchStep1Dropdown = async (): Promise<void> => {
-    console.log('📝 Market Research Step 1: Clicking Market Research dropdown...');
-    console.log('🧪 TESTING: Current URL before dropdown click:', window.location.href);
-    console.log('🧪 TESTING: Document ready state before dropdown click:', document.readyState);
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Strategy 1: Look for "Market Research" dropdown
-    const clickableElements = Array.from(document.querySelectorAll('button, a, [role="button"], div[onclick], span[onclick], [tabindex]'));
-    
-    console.log('🔍 Found', clickableElements.length, 'potential clickable elements');
-    
-    for (let i = 0; i < clickableElements.length; i++) {
-        const element = clickableElements[i];
-        const text = element.textContent?.trim();
-        const isVisible = (element as HTMLElement).offsetParent !== null;
-        const isEnabled = !(element as HTMLButtonElement).disabled;
-        
-        console.log(`🔍 Element ${i + 1}:`, {
-            text: text,
-            tagName: element.tagName,
-            className: (element as HTMLElement).className,
-            visible: isVisible,
-            enabled: isEnabled
-        });
-        
-        if (text?.includes('Market Research')) {
-            if (isVisible && isEnabled) {
-                console.log('🎯 FOUND MARKET RESEARCH DROPDOWN:', text);
-                console.log('🧪 TESTING: About to click Market Research dropdown...');
-                (element as HTMLElement).click();
-                console.log('✅ Clicked Market Research dropdown');
-                console.log('🧪 TESTING: URL after dropdown click:', window.location.href);
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for dropdown to open
-                console.log('🧪 TESTING: URL after dropdown wait:', window.location.href);
-                return;
-            }
-        }
-    }
-    
-    throw new Error('❌ Market Research dropdown not found');
-};
-
-const marketResearchStep2MarketDashboard = async (): Promise<void> => {
-    await saveLog('📝 Market Research Step 2: Selecting Market Dashboard (first option)...');
-    await saveLog('🧪 CRITICAL DEBUG: Starting Market Dashboard selection...');
-    await saveLog('🧪 CRITICAL DEBUG: Current URL at start:', window.location.href);
-    await saveLog('🧪 CRITICAL DEBUG: Document ready state:', document.readyState);
-    await saveLog('🧪 CRITICAL DEBUG: Page title:', document.title);
-
-    // Check if we're already on the reports page
-    const currentUrl = window.location.href;
-    const isAlreadyOnReportsPage = currentUrl.startsWith('https://app.pricelabs.co/reports');
-
-    if (isAlreadyOnReportsPage) {
-        await saveLog('✅ ALREADY ON REPORTS PAGE: Skipping Market Dashboard navigation');
-        await saveLog('🔄 Proceeding directly to Show Dashboard step');
-        return;
-    }
-
-    await saveLog('📍 NOT ON REPORTS PAGE: Need to navigate to Market Dashboard');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Strategy 1: Look for "Market Dashboard" in dropdown items
-    const dropdownItems = Array.from(document.querySelectorAll([
-        '[role="menuitem"]',
-        '[role="option"]', 
-        '.dropdown-item',
-        '.menu-item',
-        '[class*="dropdown"] a',
-        '[class*="menu"] a',
-        '[class*="dropdown"] button',
-        '[class*="menu"] button',
-        'li a',
-        'li button'
-    ].join(', ')));
-    
-    await saveLog('🔍 Found', dropdownItems.length + ' potential dropdown items');
-    await saveLog('🧪 CRITICAL DEBUG: About to analyze dropdown items...');
-
-    for (let i = 0; i < dropdownItems.length; i++) {
-        const item = dropdownItems[i];
-        const text = item.textContent?.trim();
-        const isVisible = (item as HTMLElement).offsetParent !== null;
-        const isEnabled = !(item as HTMLButtonElement).disabled;
-
-        await saveLog(`🔍 Dropdown item ${i + 1}:`, {
-            text: text,
-            tagName: item.tagName,
-            className: (item as HTMLElement).className,
-            visible: isVisible,
-            enabled: isEnabled
-        });
-
-        if (text?.toLowerCase().includes('market dashboard')) {
-            if (isVisible && isEnabled) {
-                await saveLog('🎯 FOUND MARKET DASHBOARD OPTION:', text);
-                // Log details as individual lines to avoid Object display issue
-                await saveLog('🧪 CRITICAL DEBUG: Market Dashboard option details:');
-                await saveLog('  📝 text:', text);
-                await saveLog('  🏷️ tagName:', item.tagName);
-                await saveLog('  🎨 className:', (item as HTMLElement).className);
-                await saveLog('  🆔 id:', (item as HTMLElement).id);
-                await saveLog('  🔗 href:', (item as HTMLAnchorElement).href);
-                await saveLog('  ⚡ onclick:', (item as HTMLElement).onclick?.toString());
-                await saveLog('  📄 innerHTML:', item.innerHTML.substring(0, 200));
-                await saveLog('  👀 outerHTML:', (item as HTMLElement).outerHTML.substring(0, 300));
-
-                await saveLog('🔧 SOLUTION: This is a direct link causing page reload. Using controlled navigation instead.');
-                await saveLog('🔧 SOLUTION: Will prevent default click and use window.location for smoother navigation.');
-                
-                // Instead of clicking the link (which causes page reload), use controlled navigation
-                const targetUrl = (item as HTMLAnchorElement).href;
-                await saveLog('🔧 SOLUTION: Navigating to:', targetUrl);
-
-                // PRE-CLICK VALIDATION: Record current URL to detect navigation
-                const preNavUrl = window.location.href;
-                await saveLog('🔍 PRE-NAVIGATION URL:', preNavUrl);
-
-                // Prevent navigation to the same URL
-                if (preNavUrl === targetUrl) {
-                    await saveLog('⚠️ SAME URL DETECTED: Already on target page, skipping navigation');
-                    await saveLog('🔄 Continuing workflow without navigation');
-                    return;
-                }
-
-                // Use window.location.href for controlled navigation
-                window.location.href = targetUrl;
-
-                await saveLog('✅ Initiated controlled navigation to Market Dashboard');
-
-                // POST-NAVIGATION VALIDATION: Check if navigation occurred (though this might not execute due to navigation)
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Brief wait for navigation to start
-                const postNavUrl = window.location.href;
-                await saveLog('🔍 POST-NAVIGATION URL:', postNavUrl);
-
-                if (preNavUrl !== postNavUrl) {
-                    await saveLog('🚨 NAVIGATION DETECTED: Market Dashboard navigation successful');
-                    await saveLog('⏳ Waiting for navigation to complete...');
-                    // Wait longer for the navigation to fully complete
-                    await new Promise(resolve => setTimeout(resolve, 4000));
-                    await saveLog('✅ Navigation completed, continuing workflow');
-                } else {
-                    await saveLog('⚠️ NO NAVIGATION DETECTED: URL remained the same');
-                }
-                return;
-            }
-        }
-    }
-    
-    // If Market Dashboard not found, log all dropdown items for debugging
-    await saveLog('🛑 CRITICAL DEBUG: Market Dashboard not found. Logging ALL dropdown items:');
-    for (let i = 0; i < dropdownItems.length; i++) {
-        const item = dropdownItems[i];
-        const text = item.textContent?.trim();
-        await saveLog(`🔍 Dropdown item ${i + 1}:`, {
-            text: text,
-            tagName: item.tagName,
-            className: (item as HTMLElement).className,
-            id: (item as HTMLElement).id,
-            href: (item as HTMLAnchorElement).href,
-            visible: (item as HTMLElement).offsetParent !== null,
-            enabled: !(item as HTMLButtonElement).disabled,
-            innerHTML: item.innerHTML.substring(0, 100)
-        });
-    }
-    
-    throw new Error('🛑 CRITICAL PAUSE: No Market Dashboard option found. Check console for all dropdown items.');
 };
 
 const marketResearchStep3Complete = async (): Promise<void> => {
@@ -2609,7 +2326,9 @@ const downloadCSV = async (csvContent: string): Promise<void> => {
 };
 
 chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sendResponse) => {
-    console.log('Content script received message:', message);
+    console.log('📨 Content script received message:', message);
+    console.log('📨 Message type:', message.type);
+    console.log('📨 Full message object:', JSON.stringify(message, null, 2));
 
     const handleMessage = async (): Promise<ContentScriptResponse> => {
         try {
@@ -2753,20 +2472,14 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     await occupancyStep8Complete();
                     return { type: 'SUCCESS' };
                 }
-                case 'NAVIGATION_STEP_1_DYNAMIC_PRICING': {
-                    await navigationStep1DynamicPricing();
-                    return { type: 'SUCCESS' };
-                }
-                case 'NAVIGATION_STEP_2_CUSTOMIZATIONS': {
-                    await navigationStep2Customizations();
-                    return { type: 'SUCCESS' };
-                }
                 case 'NAVIGATION_STEP_3_COMPLETE': {
                     await navigationStep3Complete();
                     return { type: 'SUCCESS' };
                 }
                 case 'CUSTOMIZATIONS_STEP_1_LISTINGS': {
+                    console.log('🎯 CUSTOMIZATIONS_STEP_1_LISTINGS handler called!');
                     await customizationsStep1Listings();
+                    console.log('✅ CUSTOMIZATIONS_STEP_1_LISTINGS completed successfully');
                     return { type: 'SUCCESS' };
                 }
                 case 'CUSTOMIZATIONS_STEP_2_TABLE_VIEW': {
@@ -2779,14 +2492,6 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                 }
                 case 'CUSTOMIZATIONS_STEP_4_COMPLETE': {
                     await customizationsStep4Complete();
-                    return { type: 'SUCCESS' };
-                }
-                case 'MARKET_RESEARCH_STEP_1_DROPDOWN': {
-                    await marketResearchStep1Dropdown();
-                    return { type: 'SUCCESS' };
-                }
-                case 'MARKET_RESEARCH_STEP_2_MARKET_DASHBOARD': {
-                    await marketResearchStep2MarketDashboard();
                     return { type: 'SUCCESS' };
                 }
                 case 'MARKET_RESEARCH_STEP_3_COMPLETE': {
