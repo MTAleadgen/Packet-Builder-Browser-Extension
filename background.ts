@@ -1433,9 +1433,25 @@ async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
         const token = apiTokenGlobal;
         if (!token) throw new Error('API token is required. Please enter it in the popup.');
         const current = await getListingViaApi(listingId, token);
-        const originalBase = current?.base;
         const maxFromApi = current?.max;
         console.log('📡 API GET current listing:', current);
+
+        // Check if we already have the original base stored (don't overwrite it)
+        const stored = await chrome.storage.local.get(['originalBase']);
+        let originalBase: number;
+
+        if (typeof stored.originalBase === 'number') {
+            // Use the already stored original base (preserves the true original value)
+            originalBase = stored.originalBase;
+            console.log('✅ Using stored original base:', originalBase);
+            await persistLog('Workflow: Using stored original base', { originalBase, currentBase: current?.base });
+        } else {
+            // Store the current base as the original (first time running workflow)
+            originalBase = current?.base;
+            console.log('📝 Storing new original base:', originalBase);
+            await persistLog('Workflow: Storing new original base', { originalBase });
+        }
+
         await chrome.storage.local.set({ originalBase, originalListingId: listingId, originalPms: pms });
 
         // 2) POST to set base to max
@@ -1650,36 +1666,32 @@ async function proceedAfterInitialSteps() {
     // Continue the workflow from where startWorkflowWithPair left off
     // startWorkflowWithPair completed steps 1-2, so we continue from step 3
 
-    await updateState({ step: 3, message: 'Step 3: Clicking Sync Now button (dummy)...' });
-    await sendMessageToTab(originalTabId, { type: 'DUMMY_SYNC_CLICK' });
+    await updateState({ step: 3, message: 'Step 3: Clicking Sync Now button...' });
+    await sendMessageToTab(originalTabId, { type: 'SYNC_NOW' });
     await new Promise(res => setTimeout(res, 3000));
 
     await updateState({ step: 4, message: 'Step 4: Clicking Edit button...' });
-    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_1_EDIT' });
+    await sendMessageToTab(originalTabId, { type: 'EDIT_BUTTON' });
     await new Promise(res => setTimeout(res, 3000));
 
-    await updateState({ step: 5, message: 'Step 5: Scrolling and clicking Edit Profile...' });
-    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
+    await updateState({ step: 5, message: 'Step 5: Clicking Edit Now button...' });
+    await sendMessageToTab(originalTabId, { type: 'EDIT_NOW' });
     await new Promise(res => setTimeout(res, 3000));
 
-    await updateState({ step: 6, message: 'Step 6: Clicking Edit Profile button in popup...' });
-    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
-    await new Promise(res => setTimeout(res, 3000));
-
-    await updateState({ step: 7, message: 'Step 7: Clicking Download button...' });
+    await updateState({ step: 6, message: 'Step 6: Clicking Download button...' });
     await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_4_DOWNLOAD' });
     await new Promise(res => setTimeout(res, 3000));
 
-    await updateState({ step: 8, message: 'Step 8: Closing popup...' });
+    await updateState({ step: 7, message: 'Step 7: Closing popup...' });
     await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_5_CLOSE_POPUP' });
     await new Promise(res => setTimeout(res, 3000));
 
-    await updateState({ step: 9, message: 'Step 9: Clicking Dynamic Pricing dropdown...' });
+    await updateState({ step: 8, message: 'Step 8: Clicking Dynamic Pricing dropdown...' });
     await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_1_DYNAMIC_PRICING' });
     await new Promise(res => setTimeout(res, 3000));
 
-    // Step 10: Navigate to Customizations page
-    await updateState({ step: 10, message: 'Step 10: Navigating to Customizations page...' });
+    // Step 9: Navigate to Customizations page
+    await updateState({ step: 9, message: 'Step 9: Navigating to Customizations page...' });
     await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_2_CUSTOMIZATIONS' });
     await new Promise(res => setTimeout(res, 3000));
 

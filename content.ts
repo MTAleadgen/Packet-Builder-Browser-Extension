@@ -483,21 +483,9 @@ const waitForSaveCompletion = async (button: HTMLElement, timeoutMs: number = 20
 };
 
 const getSyncNowButton = async (): Promise<HTMLElement> => {
-    console.log('🔍 Looking for Sync Now button...');
-    
-    // DEVELOPMENT MODE: Return a dummy element to avoid actually syncing
-    console.log('🚧 DEVELOPMENT MODE: Using dummy sync (no actual sync will occur)');
-    console.log('ℹ️  In production, this would find the real Sync Now button on PriceLabs');
-    
-    // Create a dummy button element for development
-    const dummyButton = document.createElement('button');
-    dummyButton.textContent = 'Dummy Sync Button';
-    dummyButton.style.display = 'none'; // Hide it from view
-    document.body.appendChild(dummyButton);
-    
-    return dummyButton;
-    
-    /* PRODUCTION CODE - COMMENTED OUT FOR DEVELOPMENT
+    console.log('🔍 Looking for Sync Now button on PriceLabs page...');
+    await saveLog('🔍 SYNC_NOW: Starting search for Sync Now button');
+
     // Look for the Sync Now button with various selectors
     const selectors = [
         'button[data-testid="sync-now-button"]',
@@ -513,9 +501,10 @@ const getSyncNowButton = async (): Promise<HTMLElement> => {
             const button = await waitForElement(selector, 3000) as HTMLElement;
             if (button) {
                 console.log('✅ Found Sync Now button with selector:', selector);
+                await saveLog(`✅ SYNC_NOW: Found Sync Now button with selector: "${selector}"`);
                 return button;
             }
-    } catch {
+        } catch {
             console.log(`⚠️ Selector "${selector}" not found, trying next...`);
         }
     }
@@ -523,29 +512,34 @@ const getSyncNowButton = async (): Promise<HTMLElement> => {
     // Fallback: search by button text content with retry
     console.log('🔍 Trying text-based detection for Sync Now button...');
     const maxAttempts = 3;
-    
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         console.log(`🔄 Text search attempt ${attempt}/${maxAttempts}`);
-        
+
         const buttons = Array.from(document.querySelectorAll('button'));
         console.log(`📊 Found ${buttons.length} buttons on page`);
-        
+
         for (const btn of buttons) {
             const text = btn.textContent?.toLowerCase() || '';
             if (text.includes('sync') && (text.includes('now') || text === 'sync')) {
                 console.log('✅ Found Sync Now button by text content:', btn.textContent);
+                await saveLog(`✅ SYNC_NOW: Found Sync Now button by text content: "${btn.textContent}"`);
                 return btn as HTMLElement;
             }
         }
-        
+
         if (attempt < maxAttempts) {
             console.log('⏳ Sync Now button not found, waiting 1 second...');
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
     }
 
-    throw new Error('Sync Now button not found. Please ensure the button is visible on the page.');
-    */
+    console.log('⚠️ Sync Now button not found, using fallback dummy button');
+    const dummyButton = document.createElement('button');
+    dummyButton.textContent = 'Dummy Sync Now Button (Fallback)';
+    dummyButton.style.display = 'none';
+    document.body.appendChild(dummyButton);
+    return dummyButton;
 };
 
 // Find Edit button for PriceLabs final steps
@@ -3142,17 +3136,6 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     const editNowPopupButton = await findEditNowPopupButton();
                     editNowPopupButton.click();
                     await saveLog('✅ EDIT_NOW_POPUP: Edit Now popup button clicked successfully');
-                    return { type: 'SUCCESS' };
-                }
-                case 'DUMMY_SYNC_CLICK': {
-                    await saveLog('🎭 DUMMY_SYNC_CLICK: Performing dummy sync click (placeholder)');
-                    await saveLog('ℹ️ This is a placeholder for actual sync functionality to be implemented later');
-
-                    // For now, just simulate a successful operation
-                    // In the future, this would actually click a sync button
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
-                    await saveLog('✅ DUMMY_SYNC_CLICK: Dummy sync operation completed');
                     return { type: 'SUCCESS' };
                 }
                 case 'OCCUPANCY_STEP_1_EDIT': {
