@@ -26,6 +26,8 @@ export const PopupApp: React.FC = () => {
   const [selectedIndexes, setSelectedIndexes] = useState<Record<number, boolean>>({ 0: true });
   const [isPairsMode, setIsPairsMode] = useState<boolean>(false);
   const [apiToken, setApiToken] = useState<string>('');
+  const [showLogs, setShowLogs] = useState<boolean>(false);
+  const [persistentLogs, setPersistentLogs] = useState<any[]>([]);
 
   useEffect(() => {
 
@@ -129,8 +131,25 @@ export const PopupApp: React.FC = () => {
   const handleStartPairs = useCallback(() => {
     const selectedPairs = pairs.filter((_, idx) => !!selectedIndexes[idx]);
     console.log('🚀 POPUP DEBUG: Start with pairs clicked. Selected:', selectedPairs);
-    chrome.runtime.sendMessage({ type: 'START_WORKFLOW_WITH_PAIRS', selectedPairs });
-  }, [pairs, selectedIndexes]);
+    chrome.runtime.sendMessage({ type: 'START_WORKFLOW_WITH_PAIRS', selectedPairs, apiToken });
+  }, [pairs, selectedIndexes, apiToken]);
+
+  const handleViewLogs = useCallback(() => {
+    console.log('📋 POPUP DEBUG: View Logs button clicked');
+    setShowLogs(true);
+
+    // Fetch persistent logs from storage
+    chrome.storage.local.get(['pcp_logs'], (result) => {
+      const logs = result.pcp_logs || [];
+      console.log('📋 POPUP DEBUG: Retrieved logs:', logs.length, 'entries');
+      setPersistentLogs(logs);
+    });
+  }, []);
+
+  const handleCloseLogs = useCallback(() => {
+    console.log('📋 POPUP DEBUG: Close Logs clicked');
+    setShowLogs(false);
+  }, []);
 
   const renderContent = () => {
     if (isLoading) {
@@ -311,18 +330,106 @@ export const PopupApp: React.FC = () => {
     }
   };
 
+  const renderLogsModal = () => {
+    if (!showLogs) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-slate-800 rounded-lg p-4 max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-white">Persistent Logs</h2>
+            <button
+              onClick={handleCloseLogs}
+              className="text-gray-400 hover:text-white text-xl font-bold"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="flex-grow overflow-y-auto bg-slate-900 rounded p-3">
+            {persistentLogs.length === 0 ? (
+              <div className="text-gray-400 text-center py-8">
+                No persistent logs found. Run a workflow to generate logs.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {persistentLogs.slice().reverse().map((log, index) => {
+                  const date = new Date(log.ts).toLocaleString();
+                  return (
+                    <div key={index} className="bg-slate-700 rounded p-2 text-xs">
+                      <div className="text-gray-300 font-mono">
+                        [{date}]
+                      </div>
+                      <div className="text-white font-semibold mt-1">
+                        {log.message}
+                      </div>
+                      {log.data && (
+                        <div className="text-gray-400 mt-1 font-mono text-xs">
+                          {typeof log.data === 'object'
+                            ? JSON.stringify(log.data, null, 2)
+                            : String(log.data)
+                          }
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={() => {
+                // Clear all logs
+                chrome.storage.local.set({ pcp_logs: [] }, () => {
+                  setPersistentLogs([]);
+                  console.log('🧹 POPUP DEBUG: Logs cleared');
+                });
+              }}
+              className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded text-sm"
+            >
+              Clear Logs
+            </button>
+            <button
+              onClick={handleCloseLogs}
+              className="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded text-sm"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="flex flex-col p-4 h-full bg-slate-800/50 rounded-lg">
-      <header className="flex items-center pb-4 border-b border-slate-700">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-400" viewBox="0 0 20 20" fill="currentColor">
-          <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a1 1 0 001 1h1.586l.707.707a1 1 0 001.414 0L8.414 14H15a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1-1zm1 2v8h10V5H4z" clipRule="evenodd" />
-          <path d="M11 7a1 1 0 10-2 0v4a1 1 0 102 0V7zM7 9a1 1 0 10-2 0v2a1 1 0 102 0V9zM15 9a1 1 0 10-2 0v2a1 1 0 102 0V9z" />
-        </svg>
-        <h1 className="text-xl font-bold ml-2">Pricing Co-Pilot</h1>
-      </header>
-      <main className="flex-grow pt-4 flex flex-col justify-center">
-        {renderContent()}
-      </main>
-    </div>
+    <>
+      <div className="flex flex-col p-4 h-full bg-slate-800/50 rounded-lg">
+        <header className="flex items-center justify-between pb-4 border-b border-slate-700">
+          <div className="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a1 1 0 001 1h1.586l.707.707a1 1 0 001.414 0L8.414 14H15a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1-1zm1 2v8h10V5H4z" clipRule="evenodd" />
+              <path d="M11 7a1 1 0 10-2 0v4a1 1 0 102 0V7zM7 9a1 1 0 10-2 0v2a1 1 0 102 0V9zM15 9a1 1 0 10-2 0v2a1 1 0 102 0V9z" />
+            </svg>
+            <h1 className="text-xl font-bold ml-2">Pricing Co-Pilot</h1>
+          </div>
+          <button
+            onClick={handleViewLogs}
+            className="bg-blue-600 hover:bg-blue-500 text-white text-sm px-3 py-1 rounded transition-colors duration-200 flex items-center gap-1"
+            title="View Persistent Logs"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+            View Logs
+          </button>
+        </header>
+        <main className="flex-grow pt-4 flex flex-col justify-center">
+          {renderContent()}
+        </main>
+      </div>
+      {renderLogsModal()}
+    </>
   );
 };

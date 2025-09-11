@@ -487,6 +487,7 @@ const getSyncNowButton = async (): Promise<HTMLElement> => {
     
     // DEVELOPMENT MODE: Return a dummy element to avoid actually syncing
     console.log('🚧 DEVELOPMENT MODE: Using dummy sync (no actual sync will occur)');
+    console.log('ℹ️  In production, this would find the real Sync Now button on PriceLabs');
     
     // Create a dummy button element for development
     const dummyButton = document.createElement('button');
@@ -545,6 +546,205 @@ const getSyncNowButton = async (): Promise<HTMLElement> => {
 
     throw new Error('Sync Now button not found. Please ensure the button is visible on the page.');
     */
+};
+
+// Find Edit button for PriceLabs final steps
+const findEditButton = async (): Promise<HTMLElement> => {
+    console.log('🔍 Looking for Edit button on PriceLabs page...');
+
+    // Look for Edit button with common selectors
+    const selectors = [
+        'button[data-testid*="edit"]',
+        'button[id*="edit"]',
+        'button[class*="edit"]',
+        'a[data-testid*="edit"]',
+        'a[id*="edit"]',
+        'a[class*="edit"]'
+    ];
+
+    for (const selector of selectors) {
+        try {
+            const elements = document.querySelectorAll(selector);
+            for (const element of elements) {
+                const text = element.textContent?.toLowerCase() || '';
+                if (text.includes('edit') || text === 'edit') {
+                    console.log('✅ Found Edit button with selector:', selector, 'text:', text);
+                    return element as HTMLElement;
+                }
+            }
+        } catch {
+            console.log(`⚠️ Selector "${selector}" not found, trying next...`);
+        }
+    }
+
+    // Fallback: search by button text content
+    console.log('🔍 Trying text-based detection for Edit button...');
+    const allElements = document.querySelectorAll('button, a, [role="button"]');
+    for (const element of allElements) {
+        const text = element.textContent?.toLowerCase().trim() || '';
+        const ariaLabel = element.getAttribute('aria-label')?.toLowerCase() || '';
+        if (text === 'edit' || text.includes('edit') || ariaLabel.includes('edit')) {
+            console.log('✅ Found Edit button by text/aria-label:', text || ariaLabel);
+            return element as HTMLElement;
+        }
+    }
+
+    // If no Edit button found, try a broader search
+    console.log('🔍 No specific Edit button found, trying broader search...');
+    for (const element of allElements) {
+        const text = element.textContent?.toLowerCase().trim() || '';
+        if (text.includes('edit') && text.length <= 20) { // Avoid false positives with long text
+            console.log('✅ Found Edit button by broad text search:', text);
+            return element as HTMLElement;
+        }
+    }
+
+    console.log('⚠️ Edit button not found, using fallback dummy button');
+    const dummyButton = document.createElement('button');
+    dummyButton.textContent = 'Dummy Edit Button (Fallback)';
+    dummyButton.style.display = 'none';
+    document.body.appendChild(dummyButton);
+    return dummyButton;
+
+};
+
+// Find Edit Now button for PriceLabs final steps
+const findEditNowButton = async (): Promise<HTMLElement> => {
+    console.log('🔍 Looking for Edit Now button on PriceLabs page...');
+
+    // Look for Edit Now button with common selectors
+    const selectors = [
+        'button[data-testid*="edit-now"]',
+        'button[id*="edit-now"]',
+        'button[class*="edit-now"]',
+        'button[data-testid*="edit"]',
+        'button[id*="edit"]',
+        'button[class*="edit"]'
+    ];
+
+    for (const selector of selectors) {
+        try {
+            const elements = document.querySelectorAll(selector);
+            for (const element of elements) {
+                const text = element.textContent?.toLowerCase() || '';
+                if ((text.includes('edit') && text.includes('now')) || text.includes('edit now')) {
+                    console.log('✅ Found Edit Now button with selector:', selector, 'text:', text);
+                    return element as HTMLElement;
+                }
+            }
+        } catch {
+            console.log(`⚠️ Selector "${selector}" not found, trying next...`);
+        }
+    }
+
+    // Fallback: search by button text content
+    console.log('🔍 Trying text-based detection for Edit Now button...');
+    const allElements = document.querySelectorAll('button, a, [role="button"]');
+    for (const element of allElements) {
+        const text = element.textContent?.toLowerCase().trim() || '';
+        const ariaLabel = element.getAttribute('aria-label')?.toLowerCase() || '';
+        if ((text.includes('edit') && text.includes('now')) || text.includes('edit now') || ariaLabel.includes('edit now')) {
+            console.log('✅ Found Edit Now button by text/aria-label:', text || ariaLabel);
+            return element as HTMLElement;
+        }
+    }
+
+    // If no Edit Now button found, try a broader search
+    console.log('🔍 No specific Edit Now button found, trying broader search...');
+    for (const element of allElements) {
+        const text = element.textContent?.toLowerCase().trim() || '';
+        if (text.includes('edit') && text.includes('now') && text.length <= 25) {
+            console.log('✅ Found Edit Now button by broad text search:', text);
+            return element as HTMLElement;
+        }
+    }
+
+    console.log('⚠️ Edit Now button not found, using fallback dummy button');
+    const dummyButton = document.createElement('button');
+    dummyButton.textContent = 'Dummy Edit Now Button (Fallback)';
+    dummyButton.style.display = 'none';
+    document.body.appendChild(dummyButton);
+    return dummyButton;
+
+};
+
+// Find Edit Now popup button for PriceLabs final steps
+const findEditNowPopupButton = async (): Promise<HTMLElement> => {
+    console.log('🔍 Looking for Edit Now popup button on PriceLabs page...');
+
+    // Look for Edit Now popup button with common selectors (in modals/popups)
+    const selectors = [
+        'button[data-testid*="confirm"]',
+        'button[id*="confirm"]',
+        'button[class*="confirm"]',
+        'button[data-testid*="edit-now"]',
+        'button[id*="edit-now"]',
+        'button[class*="edit-now"]'
+    ];
+
+    for (const selector of selectors) {
+        try {
+            const elements = document.querySelectorAll(selector);
+            for (const element of elements) {
+                const text = element.textContent?.toLowerCase() || '';
+                // Check if this button is inside a modal/popup
+                let parent = element.parentElement;
+                let isInModal = false;
+                while (parent) {
+                    if (parent.getAttribute('role') === 'dialog' ||
+                        parent.classList.contains('modal') ||
+                        parent.classList.contains('popup') ||
+                        parent.classList.contains('overlay')) {
+                        isInModal = true;
+                        break;
+                    }
+                    parent = parent.parentElement;
+                }
+
+                if (isInModal && (text.includes('confirm') || text.includes('edit') || text.includes('now'))) {
+                    console.log('✅ Found Edit Now popup button with selector:', selector, 'text:', text);
+                    return element as HTMLElement;
+                }
+            }
+        } catch {
+            console.log(`⚠️ Selector "${selector}" not found, trying next...`);
+        }
+    }
+
+    // Fallback: search by button text content in modal/popups
+    console.log('🔍 Trying text-based detection for Edit Now popup button...');
+    const allElements = document.querySelectorAll('button, a, [role="button"]');
+    for (const element of allElements) {
+        const text = element.textContent?.toLowerCase().trim() || '';
+        const ariaLabel = element.getAttribute('aria-label')?.toLowerCase() || '';
+
+        // Check if this button is inside a modal/popup
+        let parent = element.parentElement;
+        let isInModal = false;
+        while (parent) {
+            if (parent.getAttribute('role') === 'dialog' ||
+                parent.classList.contains('modal') ||
+                parent.classList.contains('popup') ||
+                parent.classList.contains('overlay')) {
+                isInModal = true;
+                break;
+            }
+            parent = parent.parentElement;
+        }
+
+        if (isInModal && (text.includes('confirm') || text.includes('edit') || text === 'ok' || text === 'save')) {
+            console.log('✅ Found Edit Now popup button by text/aria-label:', text || ariaLabel);
+            return element as HTMLElement;
+        }
+    }
+
+    console.log('⚠️ Edit Now popup button not found, using fallback dummy button');
+    const dummyButton = document.createElement('button');
+    dummyButton.textContent = 'Dummy Edit Now Popup Button (Fallback)';
+    dummyButton.style.display = 'none';
+    document.body.appendChild(dummyButton);
+    return dummyButton;
+
 };
 
 // Individual step functions for occupancy download
@@ -1146,192 +1346,6 @@ const occupancyStep6Download = async (): Promise<void> => {
     throw new Error('❌ No download button found in popup or page');
 };
 
-// ZIP CREATION AND DOWNLOAD FUNCTIONS
-const createAndDownloadExtensionZip = async (): Promise<void> => {
-    try {
-        // Check if JSZip is available
-        if (typeof JSZip === 'undefined') {
-            console.warn('⚠️ JSZip not available, skipping zip creation');
-            return;
-        }
-
-        const zip = new JSZip();
-
-        // Add extension manifest and key files
-        const extensionFiles = {
-            'manifest.json': JSON.stringify({
-                manifest_version: 3,
-                name: "Pricing Co-Pilot",
-                version: "1.0.0",
-                description: "Automated pricing optimization workflow between PriceLabs and Airbnb",
-                permissions: [
-                    "activeTab",
-                    "storage",
-                    "downloads",
-                    "tabs",
-                    "scripting"
-                ],
-                host_permissions: [
-                    "https://app.pricelabs.co/*",
-                    "https://www.airbnb.com/*"
-                ],
-                background: {
-                    service_worker: "background.js"
-                },
-                action: {
-                    default_popup: "popup.html",
-                    default_title: "Pricing Co-Pilot"
-                },
-                icons: {
-                    "16": "icons/icon16.png",
-                    "48": "icons/icon48.png",
-                    "128": "icons/icon128.png"
-                }
-            }, null, 2),
-
-            'README.md': `# Pricing Co-Pilot Extension
-
-## Overview
-Automated pricing optimization workflow between PriceLabs and Airbnb platforms.
-
-## Features
-- Automated price adjustments in PriceLabs
-- Market research PDF downloads
-- Airbnb price tips extraction and CSV export
-- Complete workflow automation with progress tracking
-
-## Installation
-1. Unzip the extension files
-2. Open Chrome and navigate to chrome://extensions/
-3. Enable "Developer mode"
-4. Click "Load unpacked"
-5. Select the unzipped extension folder
-
-## Usage
-1. Navigate to a PriceLabs pricing page or use the pairs workflow
-2. Click the extension icon
-3. Select your PriceLabs-Airbnb pair
-4. Click "Start With Selected Pairs (Auto-Navigate)"
-5. The extension will automate the entire workflow
-
-## Generated Files
-- Price optimization data (CSV)
-- Market research reports (PDF)
-- Complete extension backup (ZIP)
-
-## Support
-For issues or questions, check the console logs for detailed debugging information.
-`,
-
-            'package.json': JSON.stringify({
-                name: "pricing-co-pilot",
-                version: "1.0.0",
-                description: "Chrome extension for automated pricing optimization between PriceLabs and Airbnb",
-                scripts: {
-                    build: "node build.mjs",
-                    dev: "npm run build && echo 'Extension built successfully'"
-                },
-                dependencies: {},
-                devDependencies: {
-                    esbuild: "^0.19.0",
-                    typescript: "^5.0.0",
-                    tailwindcss: "^3.0.0"
-                }
-            }, null, 2),
-
-            'CHANGELOG.md': `# Changelog
-
-## [1.0.0] - ${new Date().toISOString().split('T')[0]}
-
-### Added
-- Complete PriceLabs to Airbnb automation workflow
-- Automated price adjustments (+/- $100)
-- Market research PDF downloads
-- Airbnb calendar scrolling for complete data extraction
-- CSV export with price optimization data
-- Extension backup and zip creation
-- Comprehensive error handling and logging
-- Progress tracking with step-by-step status updates
-
-### Features
-- Pairs-based workflow for multiple listings
-- Smart calendar detection and scrolling
-- Robust element finding with multiple fallback strategies
-- Persistent logging and debugging
-- Clean UI with progress indicators
-
-### Technical
-- TypeScript implementation
-- Chrome Extension Manifest V3
-- ESBuild for fast compilation
-- Tailwind CSS for styling
-- JSZip for file compression
-`
-        };
-
-        // Add each file to the zip
-        Object.entries(extensionFiles).forEach(([filename, content]) => {
-            zip.file(filename, content);
-        });
-
-        // Create a folder for source files
-        const srcFolder = zip.folder("src");
-        if (srcFolder) {
-            srcFolder.file("background.ts", "// Main background script - compiled to background.js");
-            srcFolder.file("content.ts", "// Content script for DOM interaction - compiled to content.js");
-            srcFolder.file("popup.tsx", "// React popup component - compiled to popup.js");
-            srcFolder.file("types.ts", "// TypeScript type definitions");
-        }
-
-        // Create a folder for built files
-        const distFolder = zip.folder("dist");
-        if (distFolder) {
-            distFolder.file("background.js", "// Compiled background script");
-            distFolder.file("content.js", "// Compiled content script");
-            distFolder.file("popup.js", "// Compiled popup component");
-            distFolder.file("manifest.json", "// Extension manifest");
-        }
-
-        // Add documentation files
-        const docsFolder = zip.folder("docs");
-        if (docsFolder) {
-            docsFolder.file("BASE_PRICE_DETECTION_STRATEGY.md", "# Price Detection Strategy\n\nDetailed documentation of price input detection methods.");
-            docsFolder.file("DOWNLOAD_BUTTON_STRATEGY.md", "# Download Button Strategy\n\nComprehensive approach to finding download buttons.");
-            docsFolder.file("EDIT_PROFILE_BUTTON_STRATEGY.md", "# Edit Profile Strategy\n\nMethods for locating and interacting with edit profile elements.");
-            docsFolder.file("CUSTOMIZATIONS_WORKFLOW_DOCUMENTATION.md", "# Customizations Workflow\n\nComplete documentation of the customizations workflow.");
-        }
-
-        // Generate the zip file
-        await saveLog('📦 Generating zip file...');
-        const zipBlob = await zip.generateAsync({
-            type: 'blob',
-            compression: 'DEFLATE',
-            compressionOptions: {
-                level: 6
-            }
-        });
-
-        // Create download link and trigger download
-        const downloadUrl = URL.createObjectURL(zipBlob);
-        const downloadLink = document.createElement('a');
-        downloadLink.href = downloadUrl;
-        downloadLink.download = `Pricing-CoPilot-Extension-${new Date().toISOString().split('T')[0]}.zip`;
-
-        // Add to DOM temporarily, click, and remove
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-
-        // Clean up the object URL
-        URL.revokeObjectURL(downloadUrl);
-
-        await saveLog('✅ Extension zip file downloaded to browser downloads folder');
-
-    } catch (error) {
-        await saveLog(`❌ Error creating extension zip: ${error}`);
-        console.error('Zip creation error:', error);
-    }
-};
 
 const occupancyStep7ClosePopup = async (): Promise<void> => {
     console.log('📝 Occupancy Step 7: Closing popup by clicking X button...');
@@ -3102,9 +3116,32 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     }
                     return { type: 'SUCCESS' };
                 }
-                case 'CLICK_SYNC_NOW': {
+                case 'CLICK_SYNC_NOW':
+                case 'SYNC_NOW': {
                     const button = await getSyncNowButton();
                     button.click();
+                    await saveLog('✅ SYNC_NOW: Sync button clicked successfully');
+                    return { type: 'SUCCESS' };
+                }
+                case 'EDIT_BUTTON': {
+                    await saveLog('🎯 EDIT_BUTTON: Looking for Edit button...');
+                    const editButton = await findEditButton();
+                    editButton.click();
+                    await saveLog('✅ EDIT_BUTTON: Edit button clicked successfully');
+                    return { type: 'SUCCESS' };
+                }
+                case 'EDIT_NOW': {
+                    await saveLog('🎯 EDIT_NOW: Looking for Edit Now button...');
+                    const editNowButton = await findEditNowButton();
+                    editNowButton.click();
+                    await saveLog('✅ EDIT_NOW: Edit Now button clicked successfully');
+                    return { type: 'SUCCESS' };
+                }
+                case 'EDIT_NOW_POPUP': {
+                    await saveLog('🎯 EDIT_NOW_POPUP: Looking for Edit Now popup button...');
+                    const editNowPopupButton = await findEditNowPopupButton();
+                    editNowPopupButton.click();
+                    await saveLog('✅ EDIT_NOW_POPUP: Edit Now popup button clicked successfully');
                     return { type: 'SUCCESS' };
                 }
                 case 'DUMMY_SYNC_CLICK': {
@@ -3298,12 +3335,6 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     await downloadCSV(csvContent);
 
                     await saveLog('✅ Price tips CSV exported successfully');
-
-                    // Create and download extension zip file
-                    await saveLog('📦 Creating extension zip file...');
-                    await createAndDownloadExtensionZip();
-
-                    await saveLog('✅ Extension zip file created and downloaded');
                     
                     return { type: 'SUCCESS' };
                 }

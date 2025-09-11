@@ -60,7 +60,11 @@ export type ContentScriptMessage =
   | { type: 'READ_SERVER_BASE_PRICE' }
   | { type: 'SNAPSHOT_CALENDAR_PRICES' }
   | { type: 'CHECK_CALENDAR_UPDATED' }
-  | { type: 'FORCE_CALENDAR_RERENDER' };
+  | { type: 'FORCE_CALENDAR_RERENDER' }
+  | { type: 'SYNC_NOW' }
+  | { type: 'EDIT_BUTTON' }
+  | { type: 'EDIT_NOW' }
+  | { type: 'EDIT_NOW_POPUP' };
 
 export type ContentScriptResponse =
   | { type: 'SUCCESS' }

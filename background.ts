@@ -10,34 +10,53 @@ let state: WorkflowState = {
 
 let originalTabId: number;
 let apiTokenGlobal: string | undefined;
+let didAirbnbTips = false;
+// Clean zoom implementation with proper storage keys
 const ZOOM_OUT = 0.25;
-const zk = (id: number) => `zoom_${id}`;
-const wk = (id: number) => `win_${id}`;
+const zk = id => `zoom_${id}`, wk = id => `win_${id}`;
 
-async function getActiveOrId(tabId?: number) {
-    if (tabId) return chrome.tabs.get(tabId);
-    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-    return active;
+async function getActive(){ return (await chrome.tabs.query({active:true,currentWindow:true}))[0]; }
+
+async function zoomFull(tabId?: number){
+  const tab = tabId ? await chrome.tabs.get(tabId) : await getActive();
+  const win = await chrome.windows.get(tab.windowId);
+  const prevZoom = await chrome.tabs.getZoom(tab.id);
+  await chrome.storage.local.set({ [zk(tab.id)]: prevZoom, [wk(win.id)]: win.state });
+  await chrome.tabs.setZoomSettings(tab.id, { mode:"automatic", scope:"per-tab" });
+  await chrome.tabs.setZoom(tab.id, ZOOM_OUT);
+  await chrome.windows.update(win.id, { state:"fullscreen" });
 }
 
-async function zoomFull(tabId: number, windowId: number) {
-    const tab = await getActiveOrId(tabId);
-    const win = await chrome.windows.get(windowId);
-    const prevZoom = await chrome.tabs.getZoom(tab.id!);
-    await chrome.storage.local.set({ [zk(tab.id!)]: prevZoom, [wk(win.id!)]: win.state });
-    await chrome.tabs.setZoomSettings(tab.id!, { mode: 'automatic', scope: 'per-tab' });
-    await chrome.tabs.setZoom(tab.id!, ZOOM_OUT);
-    await chrome.windows.update(win.id!, { state: 'fullscreen' });
+async function zoomRestore(tabId?: number){
+  const tab = tabId ? await chrome.tabs.get(tabId) : await getActive();
+  const win = await chrome.windows.get(tab.windowId);
+  const st = await chrome.storage.local.get([zk(tab.id), wk(win.id)]);
+  await chrome.tabs.setZoom(tab.id, st[zk(tab.id)] ?? 1);
+  if (win.state === "fullscreen") await chrome.windows.update(win.id, { state: st[wk(win.id)] ?? "normal" });
 }
 
-async function zoomRestore(tabId: number, windowId: number) {
-    const tab = await getActiveOrId(tabId);
-    const win = await chrome.windows.get(windowId);
-    const st = await chrome.storage.local.get([zk(tab.id!), wk(win.id!)]);
-    await chrome.tabs.setZoom(tab.id!, st[zk(tab.id!)] ?? 1);
-    if (win.state === 'fullscreen') {
-        await chrome.windows.update(win.id!, { state: st[wk(win.id!)] ?? 'normal' });
+async function persistLog(message: string, data?: any) {
+    try {
+        const existing = await chrome.storage.local.get(['pcp_logs']);
+        const logs = Array.isArray(existing.pcp_logs) ? existing.pcp_logs : [];
+        const entry = { ts: Date.now(), message, data };
+        logs.push(entry);
+        if (logs.length > 300) logs.splice(0, logs.length - 300);
+        await chrome.storage.local.set({ pcp_logs: logs });
+        console.log('🧾 LOGGED:', message, data ?? '');
+    } catch (e) {
+        console.error('❌ Failed to persist log:', e);
     }
+}
+
+// Test function for debugging persistent logs
+async function testPersistentLogs() {
+    console.log('🧾 Testing persistent logging...');
+    await persistLog('TEST: Manual test of persistent logging', {
+        timestamp: Date.now(),
+        testData: 'This is a test entry'
+    });
+    console.log('✅ Test log saved - check chrome.storage.local.get("pcp_logs")');
 }
 
 // Storage keys
@@ -84,29 +103,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('Background received message:', message);
     
     switch (message.type) {
+        case 'zoom_full':
         case 'ZOOM_FULL': {
             (async () => {
                 try {
-                    const tab = sender?.tab?.id ? await chrome.tabs.get(sender.tab.id) : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-                    if (!tab?.id || !tab.windowId) throw new Error('No tab/window to zoom');
-                    await zoomFull(tab.id, tab.windowId);
+                    await zoomFull(sender?.tab?.id);
                     sendResponse?.({ ok: true });
                 } catch (e) {
-                    console.warn('ZOOM_FULL failed', (e as Error)?.message);
+                    console.warn('zoom_full failed', (e as Error)?.message);
                     sendResponse?.({ ok: false, error: (e as Error)?.message });
                 }
             })();
             return true;
         }
+        case 'zoom_restore':
         case 'ZOOM_RESTORE': {
             (async () => {
                 try {
-                    const tab = sender?.tab?.id ? await chrome.tabs.get(sender.tab.id) : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-                    if (!tab?.id || !tab.windowId) throw new Error('No tab/window to restore');
-                    await zoomRestore(tab.id, tab.windowId);
+                    await zoomRestore(sender?.tab?.id);
                     sendResponse?.({ ok: true });
                 } catch (e) {
-                    console.warn('ZOOM_RESTORE failed', (e as Error)?.message);
+                    console.warn('zoom_restore failed', (e as Error)?.message);
                     sendResponse?.({ ok: false, error: (e as Error)?.message });
                 }
             })();
@@ -170,6 +187,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             chrome.storage.local.set({ selectedPair });
             startWorkflowWithPair(selectedPair.priceLabsUrl, selectedPair.airbnbUrl);
             break;
+        }
+        case 'TEST_PERSISTENT_LOGS': {
+            (async () => {
+                try {
+                    console.log('🧾 Testing persistent logging system...');
+                    await persistLog('TEST: Manual test of persistent logging', {
+                        timestamp: Date.now(),
+                        testData: 'This is a test entry from TEST_PERSISTENT_LOGS'
+                    });
+                    console.log('✅ Test log saved - check chrome.storage.local.get("pcp_logs")');
+                    sendResponse?.({ ok: true, message: 'Test log saved successfully' });
+                } catch (e) {
+                    console.warn('❌ Test persistent logs failed:', (e as Error)?.message);
+                    sendResponse?.({ ok: false, error: (e as Error)?.message });
+                }
+            })();
+            return true;
         }
     }
 });
@@ -378,6 +412,8 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
             try {
                 await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
                 console.log('✅ Price Tips button clicked successfully');
+                didAirbnbTips = true;
+                await persistLog('Airbnb: Price Tips opened');
 
                 // Step 23: Zoom out and go fullscreen to see all months (via new zoom API)
                 await updateState({ step: 23, message: 'Airbnb Step 2: Zooming out and entering fullscreen...' });
@@ -405,6 +441,35 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
                     type: 'EXPORT_PRICE_TIPS_CSV',
                     priceData: priceData
                 });
+
+                // Reset base via API after price tips export
+                try {
+                    const stored = await chrome.storage.local.get(['originalBase', 'originalListingId', 'originalPms']);
+                    const baseToRestore = stored.originalBase;
+                    const listingId = stored.originalListingId;
+                    const pms = stored.originalPms;
+                    if (typeof baseToRestore === 'number' && listingId && pms && apiTokenGlobal) {
+                        console.log('🔁 Restoring original base via API (after price tips):', { listingId, pms, baseToRestore });
+                        await callPriceLabsListingsApi(listingId, pms, apiTokenGlobal, Math.floor(baseToRestore));
+                        await persistLog('API: base restored', { listingId, pms, base: Math.floor(baseToRestore) });
+                    } else {
+                        console.warn('⚠️ Missing stored base/listing/pms/token; skipping API restore (after price tips)');
+                        await persistLog('API: restore skipped - missing data', { hasBase: typeof baseToRestore === 'number', listingId, pms, hasToken: !!apiTokenGlobal });
+                    }
+                } catch (e) {
+                    console.warn('Restore base via API (after price tips) failed', (e as Error)?.message);
+                    await persistLog('API: restore failed', { error: (e as Error)?.message });
+                }
+
+                // Restore zoom after API call
+                console.log('🔄 Restoring zoom after API call');
+                await new Promise<void>((resolve, reject) => chrome.runtime.sendMessage({ type: 'zoom_restore' }, (resp) => {
+                    if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+                    if (!resp?.ok) return reject(new Error(resp?.error || 'zoom_restore failed'));
+                    resolve();
+                }));
+                await persistLog('Airbnb: zoom restored');
+
                 await navigateBackToPriceLabsIfPairStored();
 
             } catch (airbnbError) {
@@ -412,17 +477,8 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
                 // Don't throw error - Airbnb workflow is optional
                 console.log('⚠️ Continuing with success despite Airbnb workflow failure');
             } finally {
-                // Restore zoom and window state (via new zoom API)
-                console.log('🔄 Restoring original window state and zoom (service worker)...');
-                try {
-                    await new Promise<void>((resolve, reject) => chrome.runtime.sendMessage({ type: 'ZOOM_RESTORE' }, (resp) => {
-                        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-                        if (!resp?.ok) return reject(new Error(resp?.error || 'ZOOM_RESTORE failed'));
-                        resolve();
-                    }));
-                } catch (e) {
-                    console.warn('ZOOM_RESTORE error', (e as Error)?.message);
-                }
+                // Zoom restoration now handled immediately after CSV export
+                // No redundant zoom calls needed here
             }
 
             // Final success
@@ -533,8 +589,7 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
                 // Step 23: Zoom out and go fullscreen to see all months
                 await updateState({ step: 23, message: 'Airbnb Step 2: Zooming out and entering fullscreen...' });
                 console.log('🔍 Zooming out and entering fullscreen...');
-                await chrome.windows.update(tab.windowId, { state: 'fullscreen' });
-                await chrome.tabs.setZoom(originalTabId, 0.3);
+                await zoomFull(originalTabId);
                 await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for changes to apply
 
                 // Step 24: Extract price tips data
@@ -560,16 +615,8 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
                 // Don't throw error - Airbnb workflow is optional
                 console.log('⚠️ Continuing with success despite Airbnb workflow failure');
             } finally {
-                // Restore zoom and window state
-                console.log('🔄 Restoring original window state and zoom...');
-                await chrome.tabs.setZoom(originalTabId, originalZoom);
-                await chrome.windows.update(tab.windowId, {
-                    state: originalWindow.state,
-                    left: originalWindow.left,
-                    top: originalWindow.top,
-                    width: originalWindow.width,
-                    height: originalWindow.height,
-                });
+                // Zoom restoration now handled immediately after CSV export
+                // No redundant zoom calls needed here
             }
 
         } catch (showDashboardError) {
@@ -596,8 +643,17 @@ async function resumeCustomizationsWorkflow(startStep: number, customizationsOnl
 
 async function resumeMarketResearchWorkflow(startStep: number) {
     console.log(`🔄 Starting Market Research workflow from step ${startStep}`);
-    
+    await persistLog('Workflow: resumeMarketResearchWorkflow started', { startStep });
+
+    // If this is a fresh start (startStep = 18), we need to navigate to Airbnb first
+    if (startStep === 18) {
+        console.log('🛫 Fresh start: Navigating to Airbnb first...');
+        await navigateToAirbnbMulticalendar();
+    }
+
     try {
+        // For fresh start (startStep=18), skip page checks since we just navigated to Airbnb
+        if (startStep !== 18) {
         // Check if we're still on the correct page
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         const currentUrl = tab?.url ?? '';
@@ -619,9 +675,19 @@ async function resumeMarketResearchWorkflow(startStep: number) {
                 console.log('⚠️ Not on expected PriceLabs page. Current URL:', currentUrl);
                 throw new Error(`❌ Unexpected page. Current URL: ${currentUrl}. Expected PriceLabs pricing or reports page.`);
             }
+            }
+        } else {
+            console.log('🛫 Fresh start detected - skipping page checks, proceeding to Airbnb workflow');
         }
         
         // Continue with UI steps
+        
+        // For fresh start (startStep=18), skip to Airbnb workflow
+        if (startStep === 18) {
+            console.log('🛫 Fresh start: Jumping directly to Airbnb workflow');
+            await proceedToAirbnbWorkflow();
+            return; // Exit after Airbnb workflow completes
+        }
         
         // Step 18: Click Show Dashboard (conditionally skip if starting later)
         if (startStep <= 18) {
@@ -632,7 +698,7 @@ async function resumeMarketResearchWorkflow(startStep: number) {
                 console.log('⚠️ Show Dashboard click failed once, retrying after reinjection...', (e as Error)?.message);
                 await injectScript(originalTabId!);
                 await waitForTabLoad(originalTabId!);
-                await new Promise(res => setTimeout(res, 2000));
+                await new Promise(res => setTimeout(resolve, 2000));
                 await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD' });
             }
         }
@@ -680,8 +746,7 @@ async function resumeMarketResearchWorkflow(startStep: number) {
                 // Step 23: Zoom out and go fullscreen to see all months
                 await updateState({ step: 23, message: 'Airbnb Step 2: Zooming out and entering fullscreen...' });
                 console.log('🔍 Zooming out and entering fullscreen...');
-                await chrome.windows.update(tab.windowId, { state: 'fullscreen' });
-                await chrome.tabs.setZoom(originalTabId, 0.3);
+                await zoomFull(originalTabId);
                 await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for changes to apply
 
                 // Step 24: Extract price tips data
@@ -697,32 +762,204 @@ async function resumeMarketResearchWorkflow(startStep: number) {
                     type: 'EXPORT_PRICE_TIPS_CSV',
                     priceData: priceData
                 });
+
+                // Immediate logging after CSV export
+                console.log('✅ CSV EXPORT COMPLETED - About to exit Airbnb workflow');
+                await persistLog('Workflow: CSV export completed, exiting Airbnb workflow');
+
+                // RESTORE ZOOM AND WINDOW STATE BEFORE CONTINUATION
+                console.log('🔄 Restoring zoom and window state after price tips extraction...');
+                await persistLog('Workflow: Restoring zoom and window state');
+                try {
+                    await zoomRestore(originalTabId);
+                    console.log('✅ Zoom and window state restored successfully');
+                    await persistLog('Workflow: Zoom and window state restored');
+                } catch (zoomError) {
+                    console.warn('⚠️ Failed to restore zoom/window state:', zoomError);
+                    await persistLog('Workflow: Zoom restoration failed', { error: (zoomError as Error)?.message });
+                }
+
+                // EXECUTE CONTINUATION LOGIC IMMEDIATELY AFTER CSV EXPORT
+                console.log('🔄 CONTINUATION: Starting post-Airbnb workflow...');
+                console.log('🧾 PERSIST LOG TEST: Testing persistent logging...');
+                await persistLog('Workflow: post-Airbnb continuation started');
+                await persistLog('TEST: Persistent log test successful');
+
+                // Reset base via API after price tips export
+                console.log('🔄 CONTINUATION: Checking stored data for API restore...');
+                try {
+                    const stored = await chrome.storage.local.get(['originalBase', 'originalListingId', 'originalPms']);
+                    console.log('🔄 CONTINUATION: Retrieved stored data:', {
+                        hasBase: typeof stored.originalBase === 'number',
+                        baseValue: stored.originalBase,
+                        listingId: stored.originalListingId,
+                        pms: stored.originalPms,
+                        hasToken: !!apiTokenGlobal
+                    });
+                    await persistLog('Workflow: stored data check', {
+                        hasBase: typeof stored.originalBase === 'number',
+                        base: stored.originalBase,
+                        listingId: stored.originalListingId,
+                        pms: stored.originalPms,
+                        hasToken: !!apiTokenGlobal
+                    });
+
+                    const baseToRestore = stored.originalBase;
+                    const listingId = stored.originalListingId;
+                    const pms = stored.originalPms;
+                    if (typeof baseToRestore === 'number' && listingId && pms && apiTokenGlobal) {
+                        console.log('🔁 CONTINUATION: Calling API to restore base price...');
+                        await persistLog('Workflow: API restore starting', { listingId, pms, baseToRestore });
+                        await callPriceLabsListingsApi(listingId, pms, apiTokenGlobal, Math.floor(baseToRestore));
+                        console.log('✅ CONTINUATION: API restore completed');
+                        await persistLog('Workflow: API restore completed', { listingId, pms, base: Math.floor(baseToRestore) });
+                    } else {
+                        console.warn('⚠️ CONTINUATION: Missing data for API restore');
+                        await persistLog('Workflow: API restore skipped - missing data', {
+                            hasBase: typeof baseToRestore === 'number',
+                            listingId: !!listingId,
+                            pms: !!pms,
+                            hasToken: !!apiTokenGlobal
+                        });
+                    }
+                } catch (e) {
+                    console.warn('❌ CONTINUATION: API restore failed:', (e as Error)?.message);
+                    await persistLog('Workflow: API restore error', { error: (e as Error)?.message });
+                }
+
+                // Navigate back to PriceLabs
+                console.log('🔄 CONTINUATION: Starting navigation back to PriceLabs...');
+                await persistLog('Workflow: navigation back starting');
                 await navigateBackToPriceLabsIfPairStored();
+                console.log('✅ CONTINUATION: Navigation back completed');
+                await persistLog('Workflow: navigation back completed');
+
+                // Mark workflow as successful
+                console.log('🎉 WORKFLOW SUCCESS: About to mark as completed');
+                await persistLog('Workflow: Success state reached');
+                updateState({
+                    status: WorkflowStatus.SUCCESS,
+                    message: `Full workflow completed successfully! PDF downloaded, price tips extracted, base price restored, and returned to PriceLabs.`,
+                });
+                await clearWorkflowState();
+                console.log('✅ WORKFLOW COMPLETED');
+                await persistLog('Workflow: Final completion');
 
             } catch (airbnbError) {
+                console.error('❌ Airbnb workflow failed:', airbnbError);
+                await persistLog('Workflow: Airbnb workflow failed', { error: airbnbError?.message });
                 console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
                 // Don't throw error - Airbnb workflow is optional
                 console.log('⚠️ Continuing with success despite Airbnb workflow failure');
             } finally {
-                // Restore zoom and window state
-                console.log('🔄 Restoring original window state and zoom...');
-                await chrome.tabs.setZoom(originalTabId, originalZoom);
-                await chrome.windows.update(tab.windowId, {
-                    state: originalWindow.state,
-                    left: originalWindow.left,
-                    top: originalWindow.top,
-                    width: originalWindow.width,
-                    height: originalWindow.height,
-                });
+                // Zoom restoration now handled immediately after CSV export
+                // No redundant zoom calls needed here
             }
         }
 
+        // Continue with API restore and navigation back after Airbnb workflow
+        console.log('🔄 CONTINUATION: Starting post-Airbnb workflow...');
+        console.log('🧾 PERSIST LOG TEST: Testing persistent logging...');
+        await persistLog('Workflow: post-Airbnb continuation started');
+        await persistLog('TEST: Persistent log test successful');
+
+        // Reset base via API after price tips export
+        console.log('🔄 CONTINUATION: Checking stored data for API restore...');
+        try {
+            const stored = await chrome.storage.local.get(['originalBase', 'originalListingId', 'originalPms']);
+            console.log('🔄 CONTINUATION: Retrieved stored data:', {
+                hasBase: typeof stored.originalBase === 'number',
+                baseValue: stored.originalBase,
+                listingId: stored.originalListingId,
+                pms: stored.originalPms,
+                hasToken: !!apiTokenGlobal
+            });
+            await persistLog('Workflow: stored data check', {
+                hasBase: typeof stored.originalBase === 'number',
+                base: stored.originalBase,
+                listingId: stored.originalListingId,
+                pms: stored.originalPms,
+                hasToken: !!apiTokenGlobal
+            });
+
+            const baseToRestore = stored.originalBase;
+            const listingId = stored.originalListingId;
+            const pms = stored.originalPms;
+            if (typeof baseToRestore === 'number' && listingId && pms && apiTokenGlobal) {
+                console.log('🔁 CONTINUATION: Calling API to restore base price...');
+                await persistLog('Workflow: API restore starting', { listingId, pms, baseToRestore });
+                await callPriceLabsListingsApi(listingId, pms, apiTokenGlobal, Math.floor(baseToRestore));
+                console.log('✅ CONTINUATION: API restore completed');
+                await persistLog('Workflow: API restore completed', { listingId, pms, base: Math.floor(baseToRestore) });
+            } else {
+                console.warn('⚠️ CONTINUATION: Missing data for API restore');
+                await persistLog('Workflow: API restore skipped - missing data', {
+                    hasBase: typeof baseToRestore === 'number',
+                    listingId: !!listingId,
+                    pms: !!pms,
+                    hasToken: !!apiTokenGlobal
+                });
+            }
+        } catch (e) {
+            console.warn('❌ CONTINUATION: API restore failed:', (e as Error)?.message);
+            await persistLog('Workflow: API restore error', { error: (e as Error)?.message });
+        }
+
+        // Navigate back to PriceLabs
+        console.log('🔄 CONTINUATION: Starting navigation back to PriceLabs...');
+        await persistLog('Workflow: navigation back starting');
+        await navigateBackToPriceLabsIfPairStored();
+        console.log('✅ CONTINUATION: Navigation back completed');
+        await persistLog('Workflow: navigation back completed');
+
+        // COMPLETE FINAL STEPS ON PRICELABS
+        console.log('🔄 CONTINUATION: Starting final PriceLabs steps...');
+        await persistLog('Workflow: Starting final PriceLabs steps');
+
+        try {
+            // Step 1: Sync Now
+            console.log('🔄 CONTINUATION: Clicking Sync Now...');
+            await persistLog('Workflow: Clicking Sync Now');
+            await sendMessageToTab(originalTabId, { type: 'SYNC_NOW' });
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            // Step 2: Edit
+            console.log('🔄 CONTINUATION: Clicking Edit...');
+            await persistLog('Workflow: Clicking Edit');
+            await sendMessageToTab(originalTabId, { type: 'EDIT_BUTTON' });
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            // Step 3: Edit Now
+            console.log('🔄 CONTINUATION: Clicking Edit Now...');
+            await persistLog('Workflow: Clicking Edit Now');
+            await sendMessageToTab(originalTabId, { type: 'EDIT_NOW' });
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            // Step 4: Edit Now (popup)
+            console.log('🔄 CONTINUATION: Clicking Edit Now popup...');
+            await persistLog('Workflow: Clicking Edit Now popup');
+            await sendMessageToTab(originalTabId, { type: 'EDIT_NOW_POPUP' });
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            console.log('✅ CONTINUATION: All final PriceLabs steps completed');
+            await persistLog('Workflow: Final PriceLabs steps completed');
+
+        } catch (finalStepsError) {
+            console.warn('⚠️ CONTINUATION: Final PriceLabs steps failed:', finalStepsError);
+            await persistLog('Workflow: Final PriceLabs steps failed', { error: (finalStepsError as Error)?.message });
+            // Don't fail the entire workflow for these steps
+        }
+
         // --- Success ---
+        console.log('🎉 WORKFLOW SUCCESS: About to mark as completed');
+        await persistLog('Workflow: Success state reached');
         updateState({
             status: WorkflowStatus.SUCCESS,
-            message: `Market Research workflow completed successfully! PDF downloaded, navigated to Airbnb, scrolled calendar, and price tips extracted.`,
+            message: `Full workflow completed successfully! PDF downloaded, price tips extracted, base price restored, final PriceLabs steps completed.`,
         });
         await clearWorkflowState();
+        console.log('✅ WORKFLOW COMPLETED');
+        await persistLog('Workflow: Final completion');
 
     } catch (error) {
         console.error("Market Research workflow error:", error);
@@ -1229,6 +1466,186 @@ async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
     }
 }
 
+async function proceedToAirbnbWorkflow() {
+    console.log('🛫 Starting Airbnb workflow for fresh start...');
+
+    try {
+        // We're already on Airbnb from navigateToAirbnbMulticalendar()
+        // So we can jump straight to the price tips workflow
+
+        // Step 22: Click Price Tips button
+        updateState({ step: 22, message: 'Airbnb Step 1: Clicking Price Tips button...' });
+
+        const tab = await chrome.tabs.get(originalTabId);
+        if (!tab.windowId) throw new Error("Tab does not have a windowId.");
+        const originalWindow = await chrome.windows.get(tab.windowId);
+        const originalZoom = await chrome.tabs.getZoom(originalTabId);
+
+        try {
+            await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
+            console.log('✅ Price Tips button clicked successfully');
+            didAirbnbTips = true;
+            await persistLog('Airbnb: Price Tips opened');
+
+            // Step 23: Zoom out and go fullscreen to see all months
+            await updateState({ step: 23, message: 'Airbnb Step 2: Zooming out and entering fullscreen...' });
+            console.log('🔍 Zooming out and entering fullscreen...');
+            await zoomFull(originalTabId);
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for changes to apply
+
+            // Step 24: Extract price tips data
+            updateState({ step: 24, message: 'Airbnb Step 3: Extracting price tips data...' });
+
+            const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
+            const priceData = extractionResult.data || [];
+
+            // Step 25: Export to CSV
+            updateState({ step: 25, message: 'Airbnb Step 4: Exporting price tips to CSV...' });
+
+            await sendMessageToTab(originalTabId, {
+                type: 'EXPORT_PRICE_TIPS_CSV',
+                priceData: priceData
+            });
+
+            // Immediate logging after CSV export
+            console.log('✅ CSV EXPORT COMPLETED - About to exit Airbnb workflow');
+            await persistLog('Workflow: CSV export completed, exiting Airbnb workflow');
+
+            // RESTORE ZOOM AND WINDOW STATE BEFORE CONTINUATION
+            console.log('🔄 Restoring zoom and window state after price tips extraction...');
+            await persistLog('Workflow: Restoring zoom and window state');
+            try {
+                await zoomRestore(originalTabId);
+                console.log('✅ Zoom and window state restored successfully');
+                await persistLog('Workflow: Zoom and window state restored');
+            } catch (zoomError) {
+                console.warn('⚠️ Failed to restore zoom/window state:', zoomError);
+                await persistLog('Workflow: Zoom restoration failed', { error: (zoomError as Error)?.message });
+            }
+
+            // EXECUTE CONTINUATION LOGIC IMMEDIATELY AFTER CSV EXPORT
+            console.log('🔄 CONTINUATION: Starting post-Airbnb workflow...');
+            console.log('🧾 PERSIST LOG TEST: Testing persistent logging...');
+            await persistLog('Workflow: post-Airbnb continuation started');
+            await persistLog('TEST: Persistent log test successful');
+
+            // Reset base via API after price tips export
+            console.log('🔄 CONTINUATION: Checking stored data for API restore...');
+            try {
+                const stored = await chrome.storage.local.get(['originalBase', 'originalListingId', 'originalPms']);
+                console.log('🔄 CONTINUATION: Retrieved stored data:', {
+                    hasBase: typeof stored.originalBase === 'number',
+                    baseValue: stored.originalBase,
+                    listingId: stored.originalListingId,
+                    pms: stored.originalPms,
+                    hasToken: !!apiTokenGlobal
+                });
+                await persistLog('Workflow: stored data check', {
+                    hasBase: typeof stored.originalBase === 'number',
+                    base: stored.originalBase,
+                    listingId: stored.originalListingId,
+                    pms: stored.originalPms,
+                    hasToken: !!apiTokenGlobal
+                });
+
+                const baseToRestore = stored.originalBase;
+                const listingId = stored.originalListingId;
+                const pms = stored.originalPms;
+                if (typeof baseToRestore === 'number' && listingId && pms && apiTokenGlobal) {
+                    console.log('🔁 CONTINUATION: Calling API to restore base price...');
+                    await persistLog('Workflow: API restore starting', { listingId, pms, baseToRestore });
+                    await callPriceLabsListingsApi(listingId, pms, apiTokenGlobal, Math.floor(baseToRestore));
+                    console.log('✅ CONTINUATION: API restore completed');
+                    await persistLog('Workflow: API restore completed', { listingId, pms, base: Math.floor(baseToRestore) });
+                } else {
+                    console.warn('⚠️ CONTINUATION: Missing data for API restore');
+                    await persistLog('Workflow: API restore skipped - missing data', {
+                        hasBase: typeof baseToRestore === 'number',
+                        listingId: !!listingId,
+                        pms: !!pms,
+                        hasToken: !!apiTokenGlobal
+                    });
+                }
+            } catch (e) {
+                console.warn('❌ CONTINUATION: API restore failed:', (e as Error)?.message);
+                await persistLog('Workflow: API restore error', { error: (e as Error)?.message });
+            }
+
+            // Navigate back to PriceLabs
+            console.log('🔄 CONTINUATION: Starting navigation back to PriceLabs...');
+            await persistLog('Workflow: navigation back starting');
+            await navigateBackToPriceLabsIfPairStored();
+            console.log('✅ CONTINUATION: Navigation back completed');
+            await persistLog('Workflow: navigation back completed');
+
+            // COMPLETE FINAL STEPS ON PRICELABS
+            console.log('🔄 CONTINUATION: Starting final PriceLabs steps...');
+            await persistLog('Workflow: Starting final PriceLabs steps');
+
+            try {
+                // Step 1: Sync Now
+                console.log('🔄 CONTINUATION: Clicking Sync Now...');
+                await persistLog('Workflow: Clicking Sync Now');
+                await sendMessageToTab(originalTabId, { type: 'SYNC_NOW' });
+                await new Promise(resolve => setTimeout(resolve, 3000));
+
+                // Step 2: Edit
+                console.log('🔄 CONTINUATION: Clicking Edit...');
+                await persistLog('Workflow: Clicking Edit');
+                await sendMessageToTab(originalTabId, { type: 'EDIT_BUTTON' });
+                await new Promise(resolve => setTimeout(resolve, 3000));
+
+                // Step 3: Edit Now
+                console.log('🔄 CONTINUATION: Clicking Edit Now...');
+                await persistLog('Workflow: Clicking Edit Now');
+                await sendMessageToTab(originalTabId, { type: 'EDIT_NOW' });
+                await new Promise(resolve => setTimeout(resolve, 3000));
+
+                // Step 4: Edit Now (popup)
+                console.log('🔄 CONTINUATION: Clicking Edit Now popup...');
+                await persistLog('Workflow: Clicking Edit Now popup');
+                await sendMessageToTab(originalTabId, { type: 'EDIT_NOW_POPUP' });
+                await new Promise(resolve => setTimeout(resolve, 3000));
+
+                console.log('✅ CONTINUATION: All final PriceLabs steps completed');
+                await persistLog('Workflow: Final PriceLabs steps completed');
+
+            } catch (finalStepsError) {
+                console.warn('⚠️ CONTINUATION: Final PriceLabs steps failed:', finalStepsError);
+                await persistLog('Workflow: Final PriceLabs steps failed', { error: (finalStepsError as Error)?.message });
+                // Don't fail the entire workflow for these steps
+            }
+
+            // Mark workflow as successful
+            console.log('🎉 WORKFLOW SUCCESS: About to mark as completed');
+            await persistLog('Workflow: Success state reached');
+            updateState({
+                status: WorkflowStatus.SUCCESS,
+                message: `Full workflow completed successfully! PDF downloaded, price tips extracted, base price restored, final PriceLabs steps completed.`,
+            });
+            await clearWorkflowState();
+            console.log('✅ WORKFLOW COMPLETED');
+            await persistLog('Workflow: Final completion');
+
+        } catch (airbnbError) {
+            console.error('❌ Airbnb workflow failed:', airbnbError);
+            await persistLog('Workflow: Airbnb workflow failed', { error: airbnbError?.message });
+            console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
+            // Don't throw error - Airbnb workflow is optional
+            console.log('⚠️ Continuing with success despite Airbnb workflow failure');
+        } finally {
+            // Zoom restoration now handled immediately after CSV export
+            // No redundant zoom calls needed here
+        }
+    } catch (error) {
+        console.error("Market Research workflow error:", error);
+        updateState({
+            status: WorkflowStatus.ERROR,
+            message: `Error at step ${state.step}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        });
+    }
+}
+
 async function proceedAfterInitialSteps() {
     // Continue the workflow from where startWorkflowWithPair left off
     // startWorkflowWithPair completed steps 1-2, so we continue from step 3
@@ -1346,7 +1763,7 @@ async function proceedAfterInitialSteps() {
     console.log('🔄 Waiting for Market Research page navigation...');
     await new Promise(res => setTimeout(res, 5000));
 
-    // Continue from Market Research workflow (Show Dashboard and beyond)
+    // Continue with the Airbnb workflow and continuation logic
     await resumeMarketResearchWorkflow(18);
 }
 
@@ -1358,29 +1775,12 @@ async function navigateBackToPriceLabsIfPairStored() {
             console.log('ℹ️ No stored PriceLabs URL to navigate back to.');
             return;
         }
-        console.log('🔙 Navigating back to PriceLabs URL:', priceLabsUrl);
+		await persistLog('Nav: back to PriceLabs', { url: priceLabsUrl });
         await chrome.tabs.update(originalTabId, { url: priceLabsUrl, active: true });
         await new Promise(resolve => setTimeout(resolve, 3000));
         await injectScript(originalTabId);
         await waitForTabLoad(originalTabId);
-        console.log('✅ Back on PriceLabs page');
-
-        // After navigating back, reset base via API (skip manual UI)
-        try {
-            const stored = await chrome.storage.local.get(['originalBase', 'originalListingId', 'originalPms']);
-            const baseToRestore = stored.originalBase;
-            const listingId = stored.originalListingId;
-            const pms = stored.originalPms;
-            if (typeof baseToRestore === 'number' && listingId && pms && apiTokenGlobal) {
-                console.log('🔁 Restoring original base via API:', { listingId, pms, baseToRestore });
-                await callPriceLabsListingsApi(listingId, pms, apiTokenGlobal, Math.floor(baseToRestore));
-            } else {
-                console.warn('⚠️ Missing stored base/listing/pms/token; skipping API restore');
-            }
-        } catch (e) {
-            console.warn('Restore base via API failed', (e as Error)?.message);
-        }
-
+		await persistLog('Nav: back complete');
     } catch (e) {
         console.error('Failed to navigate back to PriceLabs:', e);
     }
@@ -1481,7 +1881,9 @@ async function callPriceLabsListingsApi(listingId: string, pms: string, apiToken
 	const payload: any = { listings: [ { id: listingId, pms } ] };
 	if (typeof base === 'number') payload.listings[0].base = base;
 	const postUrl = 'https://api.pricelabs.co/v1/listings';
-	console.log('📡 API POST:', postUrl, 'body:', JSON.stringify(payload));
+	console.log('📡 API POST: Setting base price...');
+	console.log('📡 POST URL:', postUrl);
+	console.log('📡 POST Payload:', JSON.stringify(payload, null, 2));
 	const res = await fetch(postUrl, {
 		method: 'POST',
 		headers: {
@@ -1492,28 +1894,48 @@ async function callPriceLabsListingsApi(listingId: string, pms: string, apiToken
 	});
 	const ct = res.headers.get('content-type') || '';
 	const text = await res.text();
+	console.log('📡 POST Status:', res.status);
+	console.log('📡 POST Response:', text.slice(0, 500));
 	let json: any = null;
 	try { if (ct.includes('application/json')) json = JSON.parse(text); } catch {}
-	console.log('📡 API POST status:', res.status, 'ct:', ct, 'json:', json ?? text.slice(0, 400));
-	if (!res.ok) throw new Error(`API error ${res.status}: ${text.slice(0, 400)}`);
+	console.log('📡 POST Parsed JSON:', json);
+	if (!res.ok) {
+		console.error('❌ API POST failed:', res.status, text.slice(0, 400));
+		await persistLog('API: POST failed', { status: res.status, error: text.slice(0, 400) });
+		throw new Error(`API error ${res.status}: ${text.slice(0, 400)}`);
+	}
 	if (json && Array.isArray(json.listings)) {
 		console.log('✅ API: update accepted for listings:', json.listings.map((l: any) => ({ id: l.id, pms: l.pms, base: l.base })));
+		await persistLog('API: POST success', { listings: json.listings.map((l: any) => ({ id: l.id, pms: l.pms, base: l.base })) });
 	}
 }
 
 async function getListingViaApi(listingId: string, apiToken: string): Promise<{ id: string; base?: number; min?: number; max?: number } | null> {
     const url = `https://api.pricelabs.co/v1/listings/${encodeURIComponent(listingId)}`;
+    console.log('📡 API GET Step 1: Fetching listing details...');
+    console.log('📡 GET URL:', url);
     const res = await fetch(url, { headers: { 'X-API-Key': apiToken } });
     const text = await res.text();
+    console.log('📡 GET Status:', res.status);
+    console.log('📡 GET Response:', text.slice(0, 500));
+
     if (!res.ok) {
-        console.warn('GET listing failed', res.status, text.slice(0, 200));
+        console.warn('❌ GET listing failed', res.status, text.slice(0, 200));
+        await persistLog('API: GET failed', { status: res.status, error: text.slice(0, 200) });
         return null;
     }
+
     try {
         const json = JSON.parse(text);
+        console.log('📡 GET Parsed JSON:', json);
         const lst = json?.listings?.[0];
-        return lst ? { id: lst.id, base: lst.base, min: lst.min, max: lst.max } : null;
-    } catch {
+        const result = lst ? { id: lst.id, base: lst.base, min: lst.min, max: lst.max } : null;
+        console.log('📡 GET Extracted data:', result);
+        await persistLog('API: GET success', { id: lst?.id, base: lst?.base, min: lst?.min, max: lst?.max });
+        return result;
+    } catch (e) {
+        console.warn('❌ GET JSON parse failed:', e);
+        await persistLog('API: GET parse failed', { error: (e as Error)?.message });
         return null;
     }
 }
