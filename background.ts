@@ -5,7 +5,7 @@ let state: WorkflowState = {
     status: WorkflowStatus.IDLE,
     message: 'Ready to start.',
     step: 1,
-    totalSteps: 31
+    totalSteps: 32
 };
 
 let originalTabId: number;
@@ -257,388 +257,29 @@ async function resumeWorkflow(fromStep?: number, customizationsOnly?: boolean) {
 }
 
 async function resumeCustomizationsWorkflow(startStep: number, customizationsOnly?: boolean) {
-    console.log(`🔄 Starting Customizations workflow from step ${startStep}`);
-    
-    try {
-        // Check if we're still on the correct page
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const currentUrl = tab?.url ?? '';
-        const tabTitle = tab?.title ?? '';
-        console.log('🔍 Current tab URL:', currentUrl);
-        console.log('🔍 Current tab title:', tabTitle);
-        
-        // Ensure we're on the customizations page
-        if (!currentUrl.includes('/customization')) {
-            throw new Error(`❌ Not on customizations page. Current URL: ${currentUrl}. Please navigate to customizations page first.`);
-        }
-        
-        // Ensure content script is injected and page is ready
-        console.log('🔄 Ensuring content script is injected...');
-        await injectScript(originalTabId!);
-        await waitForTabLoad(originalTabId!);
-        await new Promise(res => setTimeout(res, 3000)); // Wait for page to settle
-        console.log('✅ Content script ready for customizations workflow');
-        
-        if (startStep <= 14) {
-            // Step 14: Select Listings tab
-            console.log('🔄 Starting Step 14: Selecting Listings tab...');
-            await updateState({ step: 14, message: 'Customizations Step 1: Selecting Listings tab...' });
-            await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_1_LISTINGS' });
-            await new Promise(res => setTimeout(res, 3000));
-            console.log('✅ Step 14 completed');
-        }
-        
-        if (startStep <= 15) {
-            // Step 15: Select Table View
-            await updateState({ step: 15, message: 'Customizations Step 2: Selecting Table View...' });
-            await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_2_TABLE_VIEW' });
-            await new Promise(res => setTimeout(res, 3000));
-        }
-        
-        if (startStep <= 16) {
-            // Step 16: Download Customizations for all Listings (with 10s wait)
-            await updateState({ step: 16, message: 'Customizations Step 3: Downloading customizations...' });
-            await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_3_DOWNLOAD_ALL' });
-            await new Promise(res => setTimeout(res, 3000));
-        }
-        
         if (startStep <= 17) {
-            // Step 17: Complete customizations workflow
-            await updateState({ step: 17, message: 'Customizations Step 4: Completing customizations...' });
-            await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_4_COMPLETE' });
-            await new Promise(res => setTimeout(res, 3000));
-        }
-
-        // Check if we should stop here or continue to Market Research
-        if (customizationsOnly) {
-            console.log('🔄 Customizations-only workflow completed');
-            updateState({
-                status: WorkflowStatus.SUCCESS,
-                message: `Customizations workflow completed successfully!`,
-            });
-            await clearWorkflowState();
-            return;
-        }
-
-        // Continue to Market Research workflow (Steps 18-24)
-        console.log('🔄 Continuing to Market Research workflow...');
+        // Step 17: Show Dashboard
+        await updateState({ step: 17, message: 'Market Research Step 4: Showing Dashboard...' });
+        await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD' });
+        await new Promise(res => setTimeout(res, 5000));
+    }
         
         if (startStep <= 18) {
-            // Step 18: Click Market Research dropdown
-            await updateState({ step: 18, message: 'Market Research Step 1: Clicking Market Research dropdown...' });
-            await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_1_DROPDOWN' });
-            await new Promise(res => setTimeout(res, 3000));
-        }
-        
-        if (startStep <= 19) {
-            // Step 19: Select Market Dashboard (EXPECT DISCONNECTION)
-            await updateState({ step: 19, message: 'Market Research Step 2: Selecting Market Dashboard (navigation expected)...' });
-            
-            try {
-                await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_2_MARKET_DASHBOARD' });
-                console.log('✅ Market Dashboard selection completed without disconnection');
-                await new Promise(res => setTimeout(res, 3000));
-            } catch (navigationError) {
-                console.log('📍 EXPECTED: Content script disconnected during Market Dashboard navigation');
-                console.log('📍 This is normal for page navigation - continuing workflow...');
-                console.log('📍 Navigation error:', navigationError.message);
-                
-                // Wait for navigation to complete
-                console.log('⏳ Waiting for Market Research navigation to complete...');
-                await new Promise(res => setTimeout(res, 8000)); // Extended wait for navigation
-                
-                // Check if we successfully navigated to reports page
-                const [navTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-                const navUrl = navTab?.url ?? '';
-                console.log('🔍 Navigation result URL:', navUrl);
-                
-                if (navUrl.includes('/reports')) {
-                    console.log('✅ Successfully navigated to Market Research page');
-                    console.log('🔄 Continuing workflow with Show Dashboard...');
-                    
-                    // Re-inject content script for Show Dashboard functionality
-                    console.log('🔄 Re-injecting content script on reports page...');
-                    await injectScript(originalTabId);
-                    await waitForTabLoad(originalTabId);
-                    
-                    // Wait for page to be ready
-                    console.log('🔄 Waiting for reports page to be ready...');
-                    await new Promise(res => setTimeout(res, 5000)); // Wait for React components
-                    
-                    // Continue with Show Dashboard step
-                    console.log('🔄 Proceeding with Show Dashboard step...');
-                    await updateState({ step: 21, message: 'Market Research Step 4: Clicking Show Dashboard...' });
-                    
-                    try {
-                        await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD' });
-                        console.log('✅ Show Dashboard step completed');
-
-                        // Continue with remaining steps
-                        await new Promise(res => setTimeout(res, 3000));
-
-                        // Step 22: Complete Show Dashboard workflow (with 12s wait)
-                        await updateState({ step: 22, message: 'Market Research Step 5: Waiting 12 seconds before PDF download...' });
-                        await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_5_COMPLETE' });
-
-                        // Step 23: Download as PDF (with 15s wait)
-                        await updateState({ step: 23, message: 'Market Research Step 6: Downloading as PDF...' });
+        // Step 18: Download PDF
+        await updateState({ step: 18, message: 'Market Research Step 6: Downloading PDF...' });
                         await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_6_DOWNLOAD_PDF' });
+        await new Promise(res => setTimeout(res, 5000));
+    }
 
-                        // Step 24: Complete PDF download workflow
-                        await updateState({ step: 24, message: 'Market Research Step 7: Completing PDF download...' });
-                        await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_7_COMPLETE' });
-                        console.log('✅ Step 24 completed - waiting extra 10 seconds for download to complete');
-                        await new Promise(resolve => setTimeout(resolve, 10000)); // Increased to 10 seconds for download
-
-            // Navigate to Airbnb multicalendar
-            await navigateToAirbnbMulticalendar();
-
-            // --- AIRBNB PRICE TIPS WORKFLOW ---
-            console.log('🛫 Starting Airbnb Price Tips workflow...');
-
-            // Wait for Airbnb page to load (content script remains active)
-            console.log('⏳ Waiting for Airbnb page to load and stabilize...');
-            await new Promise(resolve => setTimeout(resolve, 8000)); // Increased wait for page transition
-
-            // Step 22: Click Price Tips button
-            await updateState({ step: 22, message: 'Airbnb Step 1: Clicking Price Tips button...' });
-            console.log('🎯 Executing Price Tips button click...');
-
-            const tab = await chrome.tabs.get(originalTabId);
-            if (!tab.windowId) throw new Error("Tab does not have a windowId.");
-            const originalWindow = await chrome.windows.get(tab.windowId);
-            const originalZoom = await chrome.tabs.getZoom(originalTabId);
-
-            try {
-                await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
-                console.log('✅ Price Tips button clicked successfully');
-                didAirbnbTips = true;
-                await persistLog('Airbnb: Price Tips opened');
-
-                // Step 23: Zoom out and go fullscreen to see all months (via new zoom API)
-                await updateState({ step: 23, message: 'Airbnb Step 2: Zooming out and entering fullscreen...' });
-                console.log('🔍 Zooming out and entering fullscreen (service worker)...');
-                await new Promise<void>((resolve, reject) => chrome.runtime.sendMessage({ type: 'ZOOM_FULL' }, (resp) => {
-                    if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-                    if (!resp?.ok) return reject(new Error(resp?.error || 'ZOOM_FULL failed'));
-                    resolve();
-                }));
-                await new Promise(resolve => setTimeout(resolve, 1500));
-
-                // Step 24: Extract price tips data
-                await updateState({ step: 24, message: 'Airbnb Step 3: Extracting price tips data...' });
-                console.log('📊 Extracting price tips data...');
-
-                const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
-                const priceData = extractionResult.data || [];
-                console.log(`✅ Extracted ${priceData.length} price tip entries`);
-
-                // Step 25: Export to CSV
-                await updateState({ step: 25, message: 'Airbnb Step 4: Exporting price tips to CSV...' });
-                console.log('📄 Exporting price tips to CSV...');
-
-                await sendMessageToTab(originalTabId, {
-                    type: 'EXPORT_PRICE_TIPS_CSV',
-                    priceData: priceData
-                });
-
-                // Reset base via API after price tips export
-                try {
-                    const stored = await chrome.storage.local.get(['originalBase', 'originalListingId', 'originalPms']);
-                    const baseToRestore = stored.originalBase;
-                    const listingId = stored.originalListingId;
-                    const pms = stored.originalPms;
-                    if (typeof baseToRestore === 'number' && listingId && pms && apiTokenGlobal) {
-                        console.log('🔁 Restoring original base via API (after price tips):', { listingId, pms, baseToRestore });
-                        await callPriceLabsListingsApi(listingId, pms, apiTokenGlobal, Math.floor(baseToRestore));
-                        await persistLog('API: base restored', { listingId, pms, base: Math.floor(baseToRestore) });
-                    } else {
-                        console.warn('⚠️ Missing stored base/listing/pms/token; skipping API restore (after price tips)');
-                        await persistLog('API: restore skipped - missing data', { hasBase: typeof baseToRestore === 'number', listingId, pms, hasToken: !!apiTokenGlobal });
-                    }
-                } catch (e) {
-                    console.warn('Restore base via API (after price tips) failed', (e as Error)?.message);
-                    await persistLog('API: restore failed', { error: (e as Error)?.message });
-                }
-
-                // Restore zoom after API call
-                console.log('🔄 Restoring zoom after API call');
-                await new Promise<void>((resolve, reject) => chrome.runtime.sendMessage({ type: 'zoom_restore' }, (resp) => {
-                    if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-                    if (!resp?.ok) return reject(new Error(resp?.error || 'zoom_restore failed'));
-                    resolve();
-                }));
-                await persistLog('Airbnb: zoom restored');
-
-                await navigateBackToPriceLabsIfPairStored();
-
-            } catch (airbnbError) {
-                console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
-                // Don't throw error - Airbnb workflow is optional
-                console.log('⚠️ Continuing with success despite Airbnb workflow failure');
-            } finally {
-                // Zoom restoration now handled immediately after CSV export
-                // No redundant zoom calls needed here
-            }
-
-            // Final success
-            await updateState({
-                status: WorkflowStatus.SUCCESS,
-                message: `Full workflow completed successfully! PDF downloaded, navigated to Airbnb (same tab), scrolled calendar, and price tips extracted.`,
-            });
+    if (customizationsOnly) {
+        await updateState({ status: WorkflowStatus.SUCCESS, message: 'Customizations complete!' });
                         await clearWorkflowState();
                         return;
-
-                    } catch (showDashboardError) {
-                        console.error('❌ Show Dashboard step failed:', showDashboardError);
-                        throw new Error(`Show Dashboard failed: ${showDashboardError.message}`);
-                    }
-                    
-                } else if (navUrl.includes('/login')) {
-                    throw new Error(`❌ Navigation redirected to login. Please log in to PriceLabs first.`);
-                } else {
-                    throw new Error(`❌ Navigation failed. Expected /reports, got: ${navUrl}`);
-                }
-            }
-        }
-        
-        if (startStep <= 20) {
-            // Step 20: Complete market research navigation with robust page handling
-            await updateState({ step: 20, message: 'Market Research Step 3: Completing navigation...' });
-            await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_3_COMPLETE' });
-            
-            // Wait for Market Research page navigation (NO FORCED SCRIPT INJECTION)
-            console.log('🔄 Waiting for Market Research page navigation...');
-            await new Promise(res => setTimeout(res, 5000)); // Reduced wait time
-            
-            // Check if we got redirected to login after navigation
-            const [navTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            const navUrl = navTab?.url ?? '';
-            console.log('🔍 Post-navigation URL check:', navUrl);
-            
-            if (navUrl.includes('/login')) {
-                throw new Error(`❌ Navigation redirected to login. Current URL: ${navUrl}. Please log in to PriceLabs first, then navigate to Market Dashboard manually.`);
-            }
-            
-            // NO CONTENT SCRIPT RE-INJECTION - let the page load naturally
-            console.log('🔄 Allowing page to load naturally without forced script injection...');
-            
-            // Minimal wait for page to settle
-            console.log('🔄 Waiting for Market Research page to settle...');
-            await new Promise(res => setTimeout(res, 3000)); // Reduced wait
-            
-            // Verify we're ready
-            console.log('✅ Market Research page navigation completed naturally');
-
-            // Content script should still be active from navigation - proceed without re-injection
-        }
-
-        // --- NOW EXECUTE STEPS 21-24: Show Dashboard and PDF Download ---
-        console.log('🔄 Starting Show Dashboard and PDF download workflow...');
-
-        // Step 21: Show Dashboard
-        await updateState({ step: 21, message: 'Market Research Step 4: Clicking Show Dashboard...' });
-        console.log('🎯 Executing Show Dashboard step...');
-
-        try {
-            await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD' });
-            console.log('✅ Show Dashboard step completed');
-
-            // Continue with remaining steps
-            await new Promise(res => setTimeout(res, 3000));
-
-            // Step 22: Complete Show Dashboard workflow (with 12s wait)
-            await updateState({ step: 22, message: 'Market Research Step 5: Waiting 12 seconds before PDF download...' });
-            await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_5_COMPLETE' });
-            console.log('✅ Step 22 completed');
-
-            // Step 23: Download as PDF (with 15s wait)
-            await updateState({ step: 23, message: 'Market Research Step 6: Downloading as PDF...' });
-            await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_6_DOWNLOAD_PDF' });
-            console.log('✅ Step 23 completed');
-
-            // Step 24: Complete PDF download workflow
-            await updateState({ step: 24, message: 'Market Research Step 7: Completing PDF download...' });
-            await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_7_COMPLETE' });
-            console.log('✅ Step 24 completed - waiting extra 10 seconds for download to complete');
-            await new Promise(resolve => setTimeout(resolve, 10000)); // Increased to 10 seconds for download
-
-            // Navigate to Airbnb multicalendar
-            await navigateToAirbnbMulticalendar();
-
-            // --- AIRBNB PRICE TIPS WORKFLOW ---
-            console.log('🛫 Starting Airbnb Price Tips workflow...');
-
-            // Wait for Airbnb page to load (content script remains active)
-            console.log('⏳ Waiting for Airbnb page to load and stabilize...');
-            await new Promise(resolve => setTimeout(resolve, 8000)); // Increased wait for page transition
-
-            // Step 22: Click Price Tips button
-            await updateState({ step: 22, message: 'Airbnb Step 1: Clicking Price Tips button...' });
-            console.log('🎯 Executing Price Tips button click...');
-
-            const tab = await chrome.tabs.get(originalTabId);
-            if (!tab.windowId) throw new Error("Tab does not have a windowId.");
-            const originalWindow = await chrome.windows.get(tab.windowId);
-            const originalZoom = await chrome.tabs.getZoom(originalTabId);
-
-            try {
-                await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
-                console.log('✅ Price Tips button clicked successfully');
-
-                // Step 23: Zoom out and go fullscreen to see all months
-                await updateState({ step: 23, message: 'Airbnb Step 2: Zooming out and entering fullscreen...' });
-                console.log('🔍 Zooming out and entering fullscreen...');
-                await zoomFull(originalTabId);
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for changes to apply
-
-                // Step 24: Extract price tips data
-                await updateState({ step: 24, message: 'Airbnb Step 3: Extracting price tips data...' });
-                console.log('📊 Extracting price tips data...');
-
-                const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
-                const priceData = extractionResult.data || [];
-                console.log(`✅ Extracted ${priceData.length} price tip entries`);
-
-                // Step 25: Export to CSV
-                await updateState({ step: 25, message: 'Airbnb Step 4: Exporting price tips to CSV...' });
-                console.log('📄 Exporting price tips to CSV...');
-
-                await sendMessageToTab(originalTabId, {
-                    type: 'EXPORT_PRICE_TIPS_CSV',
-                    priceData: priceData
-                });
-                await navigateBackToPriceLabsIfPairStored();
-
-            } catch (airbnbError) {
-                console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
-                // Don't throw error - Airbnb workflow is optional
-                console.log('⚠️ Continuing with success despite Airbnb workflow failure');
-            } finally {
-                // Zoom restoration now handled immediately after CSV export
-                // No redundant zoom calls needed here
-            }
-
-        } catch (showDashboardError) {
-            console.error('❌ Show Dashboard workflow failed:', showDashboardError);
-            throw new Error(`Show Dashboard failed: ${showDashboardError.message}`);
-        }
-
-        // --- Final Success ---
-        console.log('🎉 All steps completed successfully!');
-        updateState({
-            status: WorkflowStatus.SUCCESS,
-            message: `Full workflow completed successfully! PDF downloaded.`,
-        });
-        await clearWorkflowState();
-
-    } catch (error) {
-        console.error("Customizations workflow error:", error);
-        updateState({
-            status: WorkflowStatus.ERROR,
-            message: `Error at step ${state.step}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        });
     }
+
+    // After this, we proceed to Airbnb workflow
+    await updateState({ step: 19, message: 'Step 19: Proceeding to Airbnb workflow...' });
+    await proceedAfterInitialSteps(); // FIX: Call the first step of the sequence
 }
 
 async function resumeMarketResearchWorkflow(startStep: number) {
@@ -648,7 +289,7 @@ async function resumeMarketResearchWorkflow(startStep: number) {
     // If this is a fresh start (startStep = 18), we need to navigate to Airbnb first
     if (startStep === 18) {
         console.log('🛫 Fresh start: Navigating to Airbnb first...');
-        await navigateToAirbnbMulticalendar();
+            await navigateToAirbnbMulticalendar();
     }
 
     try {
@@ -743,20 +384,19 @@ async function resumeMarketResearchWorkflow(startStep: number) {
             try {
                 await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
 
-                // Step 23: Zoom out and go fullscreen to see all months
-                await updateState({ step: 23, message: 'Airbnb Step 2: Zooming out and entering fullscreen...' });
-                console.log('🔍 Zooming out and entering fullscreen...');
+                // Step 23: Zoom out
+                await updateState({ step: 23, message: 'Step 23: Zooming out...' });
                 await zoomFull(originalTabId);
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for changes to apply
-
+                await new Promise(resolve => setTimeout(resolve, 2000)); // USER CHANGE: 4s -> 2s
+                
                 // Step 24: Extract price tips data
-                updateState({ step: 24, message: 'Airbnb Step 3: Extracting price tips data...' });
+                await updateState({ step: 24, message: 'Step 24: Extracting price tips data...' });
 
                 const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
                 const priceData = extractionResult.data || [];
 
                 // Step 25: Export to CSV
-                updateState({ step: 25, message: 'Airbnb Step 4: Exporting price tips to CSV...' });
+                await updateState({ step: 25, message: 'Airbnb Step 4: Exporting price tips to CSV...' });
 
                 await sendMessageToTab(originalTabId, {
                     type: 'EXPORT_PRICE_TIPS_CSV',
@@ -1436,22 +1076,11 @@ async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
         const maxFromApi = current?.max;
         console.log('📡 API GET current listing:', current);
 
-        // Check if we already have the original base stored (don't overwrite it)
-        const stored = await chrome.storage.local.get(['originalBase']);
-        let originalBase: number;
-
-        if (typeof stored.originalBase === 'number') {
-            // Use the already stored original base (preserves the true original value)
-            originalBase = stored.originalBase;
-            console.log('✅ Using stored original base:', originalBase);
-            await persistLog('Workflow: Using stored original base', { originalBase, currentBase: current?.base });
-        } else {
-            // Store the current base as the original (first time running workflow)
-            originalBase = current?.base;
-            console.log('📝 Storing new original base:', originalBase);
-            await persistLog('Workflow: Storing new original base', { originalBase });
-        }
-
+        // THE FIX: Always use the newly fetched base price as the one to restore for this run.
+        // This overwrites any stale data from previous workflow executions.
+        const originalBase = current?.base;
+        console.log('📝 Storing true original base price for this run:', originalBase);
+        await persistLog('Workflow: Storing true original base for this run', { originalBase });
         await chrome.storage.local.set({ originalBase, originalListingId: listingId, originalPms: pms });
 
         // 2) POST to set base to max
@@ -1467,11 +1096,11 @@ async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
         await updateState({ step: 3, message: 'Step 3: Navigating to PriceLabs URL...' });
         console.log('🌐 Navigating to PriceLabs URL:', priceLabsUrl);
         await chrome.tabs.update(originalTabId, { url: priceLabsUrl });
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 4000)); // USER CHANGE: 2s -> 4s
 
-        // Continue with the normal workflow from Dummy Sync (Step 3)
+        // Continue with the normal workflow
         await injectScript(originalTabId);
-        await waitForTabLoad(originalTabId);
+        // REMOVED: await waitForTabLoad(originalTabId); // This was causing a long, unnecessary delay.
         await proceedAfterInitialSteps();
         return;
 
@@ -1482,301 +1111,215 @@ async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
     }
 }
 
-async function proceedToAirbnbWorkflow() {
-    console.log('🛫 Starting Airbnb workflow for fresh start...');
-
-    try {
-        // We're already on Airbnb from navigateToAirbnbMulticalendar()
-        // So we can jump straight to the price tips workflow
-
-        // Step 22: Click Price Tips button
-        updateState({ step: 22, message: 'Airbnb Step 1: Clicking Price Tips button...' });
-
-        const tab = await chrome.tabs.get(originalTabId);
-        if (!tab.windowId) throw new Error("Tab does not have a windowId.");
-        const originalWindow = await chrome.windows.get(tab.windowId);
-        const originalZoom = await chrome.tabs.getZoom(originalTabId);
-
-        try {
-            await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
-            console.log('✅ Price Tips button clicked successfully');
-            didAirbnbTips = true;
-            await persistLog('Airbnb: Price Tips opened');
-
-            // Step 23: Zoom out and go fullscreen to see all months
-            await updateState({ step: 23, message: 'Airbnb Step 2: Zooming out and entering fullscreen...' });
-            console.log('🔍 Zooming out and entering fullscreen...');
-            await zoomFull(originalTabId);
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for changes to apply
-
-            // Step 24: Extract price tips data
-            updateState({ step: 24, message: 'Airbnb Step 3: Extracting price tips data...' });
-
-            const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
-            const priceData = extractionResult.data || [];
-
-            // Step 25: Export to CSV
-            updateState({ step: 25, message: 'Airbnb Step 4: Exporting price tips to CSV...' });
-
-            await sendMessageToTab(originalTabId, {
-                type: 'EXPORT_PRICE_TIPS_CSV',
-                priceData: priceData
-            });
-
-            // Immediate logging after CSV export
-            console.log('✅ CSV EXPORT COMPLETED - About to exit Airbnb workflow');
-            await persistLog('Workflow: CSV export completed, exiting Airbnb workflow');
-
-            // RESTORE ZOOM AND WINDOW STATE BEFORE CONTINUATION
-            console.log('🔄 Restoring zoom and window state after price tips extraction...');
-            await persistLog('Workflow: Restoring zoom and window state');
-            try {
-                await zoomRestore(originalTabId);
-                console.log('✅ Zoom and window state restored successfully');
-                await persistLog('Workflow: Zoom and window state restored');
-            } catch (zoomError) {
-                console.warn('⚠️ Failed to restore zoom/window state:', zoomError);
-                await persistLog('Workflow: Zoom restoration failed', { error: (zoomError as Error)?.message });
-            }
-
-            // EXECUTE CONTINUATION LOGIC IMMEDIATELY AFTER CSV EXPORT
-            console.log('🔄 CONTINUATION: Starting post-Airbnb workflow...');
-            console.log('🧾 PERSIST LOG TEST: Testing persistent logging...');
-            await persistLog('Workflow: post-Airbnb continuation started');
-            await persistLog('TEST: Persistent log test successful');
-
-            // Reset base via API after price tips export
-            console.log('🔄 CONTINUATION: Checking stored data for API restore...');
-            try {
-                const stored = await chrome.storage.local.get(['originalBase', 'originalListingId', 'originalPms']);
-                console.log('🔄 CONTINUATION: Retrieved stored data:', {
-                    hasBase: typeof stored.originalBase === 'number',
-                    baseValue: stored.originalBase,
-                    listingId: stored.originalListingId,
-                    pms: stored.originalPms,
-                    hasToken: !!apiTokenGlobal
-                });
-                await persistLog('Workflow: stored data check', {
-                    hasBase: typeof stored.originalBase === 'number',
-                    base: stored.originalBase,
-                    listingId: stored.originalListingId,
-                    pms: stored.originalPms,
-                    hasToken: !!apiTokenGlobal
-                });
-
-                const baseToRestore = stored.originalBase;
-                const listingId = stored.originalListingId;
-                const pms = stored.originalPms;
-                if (typeof baseToRestore === 'number' && listingId && pms && apiTokenGlobal) {
-                    console.log('🔁 CONTINUATION: Calling API to restore base price...');
-                    await persistLog('Workflow: API restore starting', { listingId, pms, baseToRestore });
-                    await callPriceLabsListingsApi(listingId, pms, apiTokenGlobal, Math.floor(baseToRestore));
-                    console.log('✅ CONTINUATION: API restore completed');
-                    await persistLog('Workflow: API restore completed', { listingId, pms, base: Math.floor(baseToRestore) });
-                } else {
-                    console.warn('⚠️ CONTINUATION: Missing data for API restore');
-                    await persistLog('Workflow: API restore skipped - missing data', {
-                        hasBase: typeof baseToRestore === 'number',
-                        listingId: !!listingId,
-                        pms: !!pms,
-                        hasToken: !!apiTokenGlobal
-                    });
-                }
-            } catch (e) {
-                console.warn('❌ CONTINUATION: API restore failed:', (e as Error)?.message);
-                await persistLog('Workflow: API restore error', { error: (e as Error)?.message });
-            }
-
-            // Navigate back to PriceLabs
-            console.log('🔄 CONTINUATION: Starting navigation back to PriceLabs...');
-            await persistLog('Workflow: navigation back starting');
-            await navigateBackToPriceLabsIfPairStored();
-            console.log('✅ CONTINUATION: Navigation back completed');
-            await persistLog('Workflow: navigation back completed');
-
-            // COMPLETE FINAL STEPS ON PRICELABS
-            console.log('🔄 CONTINUATION: Starting final PriceLabs steps...');
-            await persistLog('Workflow: Starting final PriceLabs steps');
-
-            try {
-                // Step 1: Sync Now
-                console.log('🔄 CONTINUATION: Clicking Sync Now...');
-                await persistLog('Workflow: Clicking Sync Now');
-                await sendMessageToTab(originalTabId, { type: 'SYNC_NOW' });
-                await new Promise(resolve => setTimeout(resolve, 3000));
-
-                // Step 2: Edit
-                console.log('🔄 CONTINUATION: Clicking Edit...');
-                await persistLog('Workflow: Clicking Edit');
-                await sendMessageToTab(originalTabId, { type: 'EDIT_BUTTON' });
-                await new Promise(resolve => setTimeout(resolve, 3000));
-
-                // Step 3: Edit Now
-                console.log('🔄 CONTINUATION: Clicking Edit Now...');
-                await persistLog('Workflow: Clicking Edit Now');
-                await sendMessageToTab(originalTabId, { type: 'EDIT_NOW' });
-                await new Promise(resolve => setTimeout(resolve, 3000));
-
-                // Step 4: Edit Now (popup)
-                console.log('🔄 CONTINUATION: Clicking Edit Now popup...');
-                await persistLog('Workflow: Clicking Edit Now popup');
-                await sendMessageToTab(originalTabId, { type: 'EDIT_NOW_POPUP' });
-                await new Promise(resolve => setTimeout(resolve, 3000));
-
-                console.log('✅ CONTINUATION: All final PriceLabs steps completed');
-                await persistLog('Workflow: Final PriceLabs steps completed');
-
-            } catch (finalStepsError) {
-                console.warn('⚠️ CONTINUATION: Final PriceLabs steps failed:', finalStepsError);
-                await persistLog('Workflow: Final PriceLabs steps failed', { error: (finalStepsError as Error)?.message });
-                // Don't fail the entire workflow for these steps
-            }
-
-            // Mark workflow as successful
-            console.log('🎉 WORKFLOW SUCCESS: About to mark as completed');
-            await persistLog('Workflow: Success state reached');
-            updateState({
-                status: WorkflowStatus.SUCCESS,
-                message: `Full workflow completed successfully! PDF downloaded, price tips extracted, base price restored, final PriceLabs steps completed.`,
-            });
-            await clearWorkflowState();
-            console.log('✅ WORKFLOW COMPLETED');
-            await persistLog('Workflow: Final completion');
-
-        } catch (airbnbError) {
-            console.error('❌ Airbnb workflow failed:', airbnbError);
-            await persistLog('Workflow: Airbnb workflow failed', { error: airbnbError?.message });
-            console.error('❌ Airbnb Price Tips workflow failed:', airbnbError);
-            // Don't throw error - Airbnb workflow is optional
-            console.log('⚠️ Continuing with success despite Airbnb workflow failure');
-        } finally {
-            // Zoom restoration now handled immediately after CSV export
-            // No redundant zoom calls needed here
-        }
-    } catch (error) {
-        console.error("Market Research workflow error:", error);
-        updateState({
-            status: WorkflowStatus.ERROR,
-            message: `Error at step ${state.step}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        });
-    }
-}
-
 async function proceedAfterInitialSteps() {
-    // Continue the workflow from where startWorkflowWithPair left off
-    // startWorkflowWithPair completed steps 1-2, so we continue from step 3
-
-    await updateState({ step: 3, message: 'Step 3: Clicking Sync Now button...' });
+    // This function orchestrates the first major sequence on PriceLabs.
+    
+    // Step 4: Sync Now
+    await updateState({ step: 4, message: 'Step 4: Clicking Sync Now button...' });
     await sendMessageToTab(originalTabId, { type: 'SYNC_NOW' });
-    await new Promise(res => setTimeout(res, 3000));
+    await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 1s -> 2s
 
-    await updateState({ step: 4, message: 'Step 4: Clicking Edit button...' });
+    // Step 5: Edit Button
+    await updateState({ step: 5, message: 'Step 5: Clicking Edit button...' });
     await sendMessageToTab(originalTabId, { type: 'EDIT_BUTTON' });
-    await new Promise(res => setTimeout(res, 3000));
+    await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 1s -> 2s
 
-    await updateState({ step: 5, message: 'Step 5: Clicking Edit Now button...' });
-    await sendMessageToTab(originalTabId, { type: 'EDIT_NOW' });
-    await new Promise(res => setTimeout(res, 3000));
+    // Step 6: First "Edit Profile" button on main page
+    await updateState({ step: 6, message: 'Step 6: Clicking first Edit Profile button...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
+    await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 1s -> 2s
 
-    await updateState({ step: 6, message: 'Step 6: Clicking Download button...' });
-    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_4_DOWNLOAD' });
-    await new Promise(res => setTimeout(res, 3000));
+    // Step 7: "Edit Profile" button IN THE POPUP
+    await updateState({ step: 7, message: 'Step 7: Clicking Edit Profile button in popup...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
+    await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 1s -> 2s
 
-    await updateState({ step: 7, message: 'Step 7: Closing popup...' });
-    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_5_CLOSE_POPUP' });
-    await new Promise(res => setTimeout(res, 3000));
+    // Step 8: "Download" button IN THE POPUP
+    await updateState({ step: 8, message: 'Step 8: Clicking Download button...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_6_DOWNLOAD' });
+    await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 3s -> 2s
 
-    await updateState({ step: 8, message: 'Step 8: Clicking Dynamic Pricing dropdown...' });
+    // Step 9: Close the popup
+    await updateState({ step: 9, message: 'Step 9: Closing popup...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_7_CLOSE_POPUP' });
+    await new Promise(res => setTimeout(res, 3000)); // NO CHANGE
+
+    // Step 10: Clicking Dynamic Pricing dropdown
+    await updateState({ step: 10, message: 'Step 10: Clicking Dynamic Pricing dropdown...' });
     await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_1_DYNAMIC_PRICING' });
-    await new Promise(res => setTimeout(res, 3000));
+    await new Promise(res => setTimeout(res, 1000)); // USER CHANGE: 3s -> 1s
 
-    // Step 9: Navigate to Customizations page
-    await updateState({ step: 9, message: 'Step 9: Navigating to Customizations page...' });
-    await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_2_CUSTOMIZATIONS' });
-    await new Promise(res => setTimeout(res, 3000));
-
-    // Wait for navigation to customizations page
-    await new Promise(res => setTimeout(res, 5000));
-
-    // Re-inject content script after navigation
-    console.log('🔄 Re-injecting content script after Customizations navigation...');
+    // Step 11: Navigate to Customizations page
+    await updateState({ step: 11, message: 'Step 11: Navigating to Customizations page...' });
+    try {
+        // This message will likely fail because the page navigates. Set retries to 0 to prevent long delays.
+        await sendMessageToTab(originalTabId, { type: 'NAVIGATION_STEP_2_CUSTOMIZATIONS' }, 0);
+    } catch (navigationError) {
+        console.log('📍 EXPECTED: Content script disconnected during Customizations navigation.');
+    }
+    // Wait for the navigation to complete, then re-inject the script for the next step.
+    await new Promise(res => setTimeout(res, 2000)); // USER-DEFINED WAIT: 2s
     await injectScript(originalTabId);
     await waitForTabLoad(originalTabId);
 
-    // Additional wait for React components to initialize
-    console.log('🔄 Waiting for Customizations React components to initialize...');
-    await new Promise(res => setTimeout(res, 5000));
 
-    // Step 11: Select Listings tab
-    await updateState({ step: 11, message: 'Customizations Step 1: Selecting Listings tab...' });
+    // Step 12: Select Listings tab
+    await updateState({ step: 12, message: 'Customizations Step 1: Selecting Listings tab...' });
     await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_1_LISTINGS' });
-    await new Promise(res => setTimeout(res, 3000));
+    await new Promise(res => setTimeout(res, 1000)); // USER CHANGE: 3s -> 1s
 
-    // Step 12: Select Table View
-    await updateState({ step: 12, message: 'Customizations Step 2: Selecting Table View...' });
+    // Step 13: Select Table View
+    await updateState({ step: 13, message: 'Customizations Step 2: Selecting Table View...' });
     await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_2_TABLE_VIEW' });
-    await new Promise(res => setTimeout(res, 3000));
+    await new Promise(res => setTimeout(res, 1000)); // USER CHANGE: 3s -> 1s
 
-    // Step 13: Download Customizations
-    await updateState({ step: 13, message: 'Customizations Step 3: Downloading customizations...' });
+    // Step 14: Download All as CSV
+    await updateState({ step: 14, message: 'Customizations Step 3: Downloading all as CSV...' });
     await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_3_DOWNLOAD_ALL' });
-    await new Promise(res => setTimeout(res, 3000));
+    await new Promise(res => setTimeout(res, 3000)); // NO CHANGE
 
-    // Step 14: Complete customizations
-    await updateState({ step: 14, message: 'Customizations Step 4: Completing customizations...' });
-    await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_4_COMPLETE' });
-    await new Promise(res => setTimeout(res, 3000));
-
-    // Continue with Market Research workflow steps 15-24
-    await updateState({ step: 15, message: 'Step 15: Clicking Market Research dropdown...' });
+    // Step 15: Select Market Research dropdown
+    await updateState({ step: 15, message: 'Step 15: Selecting Market Research dropdown...' });
     await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_1_DROPDOWN' });
-    await new Promise(res => setTimeout(res, 3000));
+    await new Promise(res => setTimeout(res, 1000)); // USER CHANGE: 3s -> 1s
 
+    // Step 16: Click "Market Dashboard" (Navigates)
     await updateState({ step: 16, message: 'Step 16: Selecting Market Dashboard (navigation expected)...' });
     try {
-        await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_2_MARKET_DASHBOARD' });
-        console.log('✅ Market Dashboard selection completed without disconnection');
-        await new Promise(res => setTimeout(res, 3000));
+        // This message will likely fail because the page navigates. Set retries to 0 to prevent long delays.
+        await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_2_MARKET_DASHBOARD' }, 0);
     } catch (navigationError) {
-        console.log('📍 EXPECTED: Content script disconnected during Market Dashboard navigation');
-        console.log('📍 This is normal for page navigation - continuing workflow...');
-        console.log('📍 Navigation error:', navigationError.message);
+        console.log('📍 EXPECTED: Content script disconnected during navigation.');
+    }
+    console.log('⏳ Waiting for Market Research navigation to complete...');
+    await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 4s -> 2s
+    
+    // Re-inject script after navigation
+    const [navTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (navTab?.url?.includes('/reports')) {
+        console.log('✅ Successfully navigated to Market Research page, re-injecting script...');
+        await injectScript(originalTabId);
+        await waitForTabLoad(originalTabId);
+    } else {
+        throw new Error('Failed to navigate to Market Research reports page');
+    }
+    
+    // Step 17 & 18: Show Dashboard & wait for it to load
+    await updateState({ step: 17, message: 'Step 17: Clicking Show Dashboard...' });
+    await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD' });
 
-        // Wait for navigation to complete
-        console.log('⏳ Waiting for Market Research navigation to complete...');
-        await new Promise(res => setTimeout(res, 8000)); // Extended wait for navigation
+    // Step 19: Download PDF
+    await updateState({ step: 19, message: 'Step 19: Downloading as PDF...' });
+    await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_6_DOWNLOAD_PDF' });
 
-        // Check if we successfully navigated to reports page
-        const [navTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const navUrl = navTab?.url ?? '';
-        console.log('🔍 Navigation result URL:', navUrl);
+    // Step 20: Wait for PDF download
+    await updateState({ step: 20, message: 'Step 20: Waiting for PDF download to start...' });
+    await new Promise(resolve => setTimeout(resolve, 30000)); // USER CHANGE: 50s -> 30s
 
-        if (navUrl.includes('/reports')) {
-            console.log('✅ Successfully navigated to Market Research page');
-            console.log('🔄 Continuing workflow with Show Dashboard...');
+    // --- End of Part 2, now proceed to Airbnb ---
+    await proceedToAirbnbWorkflow();
+}
 
-            // Re-inject content script for Show Dashboard functionality
-            console.log('🔄 Re-injecting content script on reports page...');
-            await injectScript(originalTabId);
-            await waitForTabLoad(originalTabId);
+async function proceedToAirbnbWorkflow() {
+    // Part 3: Airbnb Price Tips
+    
+    // Step 21: Navigate to Airbnb
+    await updateState({ step: 21, message: 'Step 21: Navigating to Airbnb...' });
+    await navigateToAirbnbMulticalendar();
+    console.log('⏳ Waiting for Airbnb page to load and stabilize...');
+    await new Promise(resolve => setTimeout(resolve, 3000)); // USER CHANGE: 8s -> 3s
 
-            // Wait for page to be ready
-            console.log('🔄 Waiting for reports page to be ready...');
-            await new Promise(res => setTimeout(res, 5000)); // Wait for React components
+    // Step 22: Click Price Tips button
+    await updateState({ step: 22, message: 'Step 22: Clicking Price Tips button...' });
+    await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
+    didAirbnbTips = true;
+    await persistLog('Airbnb: Price Tips opened');
+
+    // Step 23: Zoom out
+    await updateState({ step: 23, message: 'Step 23: Zooming out...' });
+    await zoomFull(originalTabId);
+    await new Promise(resolve => setTimeout(resolve, 2000)); // NO CHANGE
+    
+    // Step 24: Extract price tips data
+    await updateState({ step: 24, message: 'Step 24: Extracting price tips data...' });
+    const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
+    const priceData = extractionResult.data || [];
+
+    // Step 25: Export to CSV
+    await updateState({ step: 25, message: 'Step 25: Exporting price tips to CSV...' });
+    await sendMessageToTab(originalTabId, { type: 'EXPORT_PRICE_TIPS_CSV', priceData });
+    await persistLog('Workflow: CSV export completed');
+    
+    // Step 26 & 27: Restore API and Zoom
+    await updateState({ step: 26, message: 'Step 26 & 27: Restoring base price and zoom...' });
+    await restoreBaseAndZoom();
+
+    // Step 28: Navigate back to PriceLabs
+    await updateState({ step: 28, message: 'Step 28: Navigating back to PriceLabs...' });
+    await navigateBackToPriceLabsIfPairStored();
+    
+    // --- End of Part 3, now proceed to Final Sequence ---
+    await proceedToFinalSequence();
+}
+
+async function restoreBaseAndZoom() {
+    // Step 26: Restore Original Base Price via API
+    try {
+        const stored = await chrome.storage.local.get(['originalBase', 'originalListingId', 'originalPms']);
+        const { originalBase, originalListingId, originalPms } = stored;
+        if (typeof originalBase === 'number' && originalListingId && originalPms && apiTokenGlobal) {
+            await persistLog('Workflow: API restore starting', { originalListingId, originalPms, originalBase });
+            await callPriceLabsListingsApi(originalListingId, originalPms, apiTokenGlobal, Math.floor(originalBase));
+            await persistLog('Workflow: API restore completed');
         } else {
-            throw new Error('Failed to navigate to Market Research reports page');
+            await persistLog('Workflow: API restore skipped - missing data');
         }
+    } catch (e) {
+        await persistLog('Workflow: API restore error', { error: (e as Error)?.message });
     }
 
-    await updateState({ step: 17, message: 'Step 17: Completing navigation...' });
-    await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_3_COMPLETE' });
+    // Step 27: Restore Zoom
+    try {
+        await zoomRestore(originalTabId);
+        await persistLog('Workflow: Zoom and window state restored');
+    } catch (zoomError) {
+        await persistLog('Workflow: Zoom restoration failed', { error: (zoomError as Error)?.message });
+    }
+}
 
-    // Wait for Market Research page navigation (NO FORCED SCRIPT INJECTION)
-    console.log('🔄 Waiting for Market Research page navigation...');
-    await new Promise(res => setTimeout(res, 5000));
+async function proceedToFinalSequence() {
+    // Part 4: Final PriceLabs Sequence
 
-    // Continue with the Airbnb workflow and continuation logic
-    await resumeMarketResearchWorkflow(18);
+    // Step 29: Sync Now
+    await updateState({ step: 29, message: 'Step 29: Clicking Sync Now...' });
+    await sendMessageToTab(originalTabId, { type: 'SYNC_NOW' });
+    await new Promise(resolve => setTimeout(resolve, 1000)); // USER CHANGE: 3s -> 1s
+
+    // Step 30: Edit
+    await updateState({ step: 30, message: 'Step 30: Clicking Edit...' });
+    await sendMessageToTab(originalTabId, { type: 'EDIT_BUTTON' });
+    await new Promise(resolve => setTimeout(resolve, 1000)); // USER CHANGE: 2s -> 1s
+
+    // Step 31: Edit Profile (Main Page)
+    await updateState({ step: 31, message: 'Step 31: Clicking first Edit Profile button...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
+    await new Promise(resolve => setTimeout(resolve, 1000)); // USER CHANGE: 2s -> 1s
+
+    // Step 32: Edit Profile (Popup)
+    await updateState({ step: 32, message: 'Step 32: Clicking Edit Profile button in popup...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
+    await new Promise(resolve => setTimeout(resolve, 1000)); // USER CHANGE: 2s -> 1s
+
+    // --- FINAL WORKFLOW SUCCESS ---
+    await updateState({
+        status: WorkflowStatus.SUCCESS,
+        message: `Full 32-step workflow completed successfully.`,
+        step: 32,
+        totalSteps: 32
+    });
+    await clearWorkflowState();
+    console.log('✅ WORKFLOW COMPLETED SUCCESSFULLY');
+    await persistLog('Workflow: Final completion');
 }
 
 async function navigateBackToPriceLabsIfPairStored() {
@@ -1789,7 +1332,7 @@ async function navigateBackToPriceLabsIfPairStored() {
         }
 		await persistLog('Nav: back to PriceLabs', { url: priceLabsUrl });
         await chrome.tabs.update(originalTabId, { url: priceLabsUrl, active: true });
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 3000)); // USER CHANGE: 2s -> 3s
         await injectScript(originalTabId);
         await waitForTabLoad(originalTabId);
 		await persistLog('Nav: back complete');
@@ -1950,4 +1493,16 @@ async function getListingViaApi(listingId: string, apiToken: string): Promise<{ 
         await persistLog('API: GET parse failed', { error: (e as Error)?.message });
         return null;
     }
+}
+
+async function resetWorkflowState() {
+    console.log('🔄 Resetting workflow state');
+    state = {
+        status: WorkflowStatus.IDLE,
+        message: 'Ready to start.',
+        step: 1,
+        totalSteps: 32
+    };
+    await chrome.storage.local.set({ state });
+    await updatePopup();
 }

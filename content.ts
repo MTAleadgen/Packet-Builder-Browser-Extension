@@ -391,7 +391,7 @@ const getSaveRefreshButton = async (): Promise<HTMLElement> => {
                 console.log(`✅ Found Save & Refresh button with selector: ${selector}`, button);
                 return button;
             }
-        } catch {
+    } catch {
             // Skip logging to avoid spam - only log successful finds
         }
     }
@@ -483,63 +483,42 @@ const waitForSaveCompletion = async (button: HTMLElement, timeoutMs: number = 20
 };
 
 const getSyncNowButton = async (): Promise<HTMLElement> => {
-    console.log('🔍 Looking for Sync Now button on PriceLabs page...');
-    await saveLog('🔍 SYNC_NOW: Starting search for Sync Now button');
+    await saveLog('🔍 SYNC_NOW: Starting search for Sync Now button with stricter logic.');
 
-    // Look for the Sync Now button with various selectors
-    const selectors = [
-        'button[data-testid="sync-now-button"]',
-        'button[data-testid="sync-now"]',
-        'button[id="sync-now-button"]',
-        'button[id="sync-now"]',
-        'button[data-testid="sync-button"]',
-        'button[id="sync-button"]'
-    ];
+    const allButtons = Array.from(document.querySelectorAll('button, [role="button"]')) as HTMLElement[];
+    let bestCandidate: HTMLElement | null = null;
 
-    for (const selector of selectors) {
-        try {
-            const button = await waitForElement(selector, 3000) as HTMLElement;
-            if (button) {
-                console.log('✅ Found Sync Now button with selector:', selector);
-                await saveLog(`✅ SYNC_NOW: Found Sync Now button with selector: "${selector}"`);
-                return button;
-            }
-        } catch {
-            console.log(`⚠️ Selector "${selector}" not found, trying next...`);
+    for (const btn of allButtons) {
+        const text = btn.textContent?.trim().toLowerCase() || '';
+        const isVisible = btn.offsetParent !== null;
+        const isDisabled = (btn as HTMLButtonElement).disabled || btn.hasAttribute('disabled') || btn.getAttribute('data-loading') === 'true';
+        const isDropdown = btn.getAttribute('aria-haspopup') === 'true' || (btn.id && btn.id.toLowerCase().includes('menu'));
+
+        if (!isVisible || isDisabled || isDropdown) {
+            continue; // Skip invisible, disabled, or dropdown-like buttons
+        }
+
+        // STRATEGY 1: Prioritize exact, case-insensitive match
+        if (text === 'sync now') {
+            await saveLog(`✅ SYNC_NOW: Found PERFECT MATCH. Text: "${text}", Not a dropdown.`);
+            console.log(`✅ SYNC_NOW: Found perfect match: "${btn.textContent}"`);
+            return btn;
+        }
+
+        // STRATEGY 2: Find a candidate that is very likely the sync button
+        if (text.includes('sync') && text.includes('now') && !text.includes('last synced')) {
+             bestCandidate = btn; // Found a likely candidate, but keep searching for an exact match
         }
     }
 
-    // Fallback: search by button text content with retry
-    console.log('🔍 Trying text-based detection for Sync Now button...');
-    const maxAttempts = 3;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        console.log(`🔄 Text search attempt ${attempt}/${maxAttempts}`);
-
-        const buttons = Array.from(document.querySelectorAll('button'));
-        console.log(`📊 Found ${buttons.length} buttons on page`);
-
-        for (const btn of buttons) {
-            const text = btn.textContent?.toLowerCase() || '';
-            if (text.includes('sync') && (text.includes('now') || text === 'sync')) {
-                console.log('✅ Found Sync Now button by text content:', btn.textContent);
-                await saveLog(`✅ SYNC_NOW: Found Sync Now button by text content: "${btn.textContent}"`);
-                return btn as HTMLElement;
-            }
-        }
-
-        if (attempt < maxAttempts) {
-            console.log('⏳ Sync Now button not found, waiting 1 second...');
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
+    if (bestCandidate) {
+        await saveLog(`⚠️ SYNC_NOW: No exact match found. Using best candidate: "${bestCandidate.textContent}"`);
+        console.log(`⚠️ SYNC_NOW: No exact match. Using best candidate: "${bestCandidate.textContent}"`);
+        return bestCandidate;
     }
 
-    console.log('⚠️ Sync Now button not found, using fallback dummy button');
-    const dummyButton = document.createElement('button');
-    dummyButton.textContent = 'Dummy Sync Now Button (Fallback)';
-    dummyButton.style.display = 'none';
-    document.body.appendChild(dummyButton);
-    return dummyButton;
+    await saveLog('❌ SYNC_NOW: All strategies failed to find a valid Sync Now button.');
+    throw new Error('Sync Now button not found');
 };
 
 // Find Edit button for PriceLabs final steps
@@ -761,42 +740,47 @@ const occupancyStep1Edit = async (): Promise<void> => {
 };
 
 const occupancyStep2ScrollAndFindEditProfile = async (): Promise<void> => {
-    console.log('📝 Occupancy Step 2: Scrolling down to find Edit Profile button...');
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for page to load
-    
-    // First, try to find Edit Profile button without scrolling
-    let editProfileButton = await findEditProfileButton();
-    
-    if (!editProfileButton) {
-        console.log('🔍 Edit Profile button not visible, scrolling down...');
-        
-        // Scroll down in increments to find the Edit Profile button
-        const maxScrollAttempts = 5;
-        const scrollAmount = 500; // pixels
-        
-        for (let i = 0; i < maxScrollAttempts; i++) {
-            window.scrollBy(0, scrollAmount);
-            console.log(`📜 Scrolled down ${scrollAmount * (i + 1)}px (attempt ${i + 1}/${maxScrollAttempts})`);
-            
-            // Wait for content to load after scroll
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Try to find the button again
-            editProfileButton = await findEditProfileButton();
-            if (editProfileButton) {
-                console.log('✅ Found Edit Profile button after scrolling!');
+    console.log('📝 Occupancy Step 2: Looking for first Edit Profile button...');
+    await saveLog('📝 Occupancy Step 2: Looking for first Edit Profile button...');
+
+    // STRATEGY 1: Find button by specific test ID or class if available
+    // (Let's assume we find a reliable selector like this in the future)
+    // const specificButton = document.querySelector('[data-testid="edit-profile-main"]');
+    // if (specificButton) { ... }
+
+    // STRATEGY 2 (PRIMARY): Find button by exact text match, then verify it's visible.
+    console.log('🎯 Strategy 2: Searching for visible "Edit Profile" button by text.');
+    const allButtons = Array.from(document.querySelectorAll('button'));
+    let foundButton: HTMLElement | null = null;
+
+    for (const btn of allButtons) {
+        if (btn.textContent?.trim().toLowerCase() === 'edit profile') {
+            const isVisible = (btn as HTMLElement).offsetParent !== null;
+            if (isVisible) {
+                console.log('✅ Found a visible "Edit Profile" button.');
+                foundButton = btn as HTMLElement;
                 break;
             }
         }
     }
-    
-    if (!editProfileButton) {
-        throw new Error('Edit Profile button not found even after scrolling. Check if you are on the correct page.');
+
+    if (foundButton) {
+        foundButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await new Promise(resolve => setTimeout(resolve, 500)); // wait for scroll
+        foundButton.click();
+        await saveLog('✅ Clicked first "Edit Profile" button.');
+        console.log('✅ Clicked first "Edit Profile" button.');
+        return;
     }
     
-    // Click the Edit Profile button
-    editProfileButton.click();
-    console.log('✅ Clicked Edit Profile button');
+    // Log details if button not found for debugging
+    console.log('❌ "Edit Profile" button not found. Logging all button texts for debugging:');
+    allButtons.forEach((btn, index) => {
+        console.log(`  - Button ${index}: "${btn.textContent?.trim()}"`);
+    });
+
+    await saveLog('❌ FAILED: Could not find first "Edit Profile" button.');
+    throw new Error('First Edit Profile button not found');
 };
 
 const findEditProfileButton = async (): Promise<HTMLElement | null> => {
@@ -838,361 +822,82 @@ const occupancyStep4EditProfile = async (): Promise<void> => {
 };
 
 const occupancyStep5ConfirmEdit = async (): Promise<void> => {
-    console.log('📝 Occupancy Step 3: Looking for Edit Profile button in popup...');
-    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait longer for popup to load
-    
-    // ULTRA COMPREHENSIVE POPUP BUTTON DETECTION
-    console.log('🔍 DEBUGGING: Looking for Edit Profile button in popup dialog...');
-    
-    // Log the entire page structure for debugging
-    console.log('🌐 Page title:', document.title);
-    console.log('🌐 Current URL:', window.location.href);
-    
-    // Find ALL elements that could be buttons or clickable
-    const allClickableElements = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"], [onclick], a, div[onclick], span[onclick]'));
-    console.log('📊 TOTAL clickable elements found:', allClickableElements.length);
-    
-    // Debug EVERY clickable element
-    allClickableElements.forEach((el, index) => {
-        const text = el.textContent?.trim() || '';
-        const tagName = el.tagName.toLowerCase();
-        const className = (el as HTMLElement).className || '';
-        const id = (el as HTMLElement).id || '';
-        const role = (el as HTMLElement).getAttribute('role') || '';
+    console.log('📝 Occupancy Step 5: Confirming Edit Profile in popup...');
+    await saveLog('📝 Occupancy Step 5: Confirming Edit Profile in popup...');
+
+    // STRATEGY 1 (PRIORITY): Highest z-index modal detection
+    console.log('🎯 Strategy 1 (PRIORITY): Highest z-index modal detection for Edit Profile');
+    const modalContainers = Array.from(document.querySelectorAll([
+        '[role="dialog"]', '[role="modal"]', '.chakra-modal__content', '.modal', '.popup',
+        '[data-testid*="modal"]', '[class*="modal"]', '[class*="popup"]', '[class*="dialog"]'
+    ].join(', ')));
+
+    console.log(`📊 Modal containers found for Edit Profile: ${modalContainers.length}`);
+
+    let topModal: Element | null = null;
+    let highestZIndex = -1;
+
+            for (const modal of modalContainers) {
+        const isVisible = (modal as HTMLElement).offsetParent !== null;
+        if (!isVisible) continue;
+
+        const zIndex = parseInt(window.getComputedStyle(modal as HTMLElement).zIndex) || 0;
         
-        console.log(`🔍 Element ${index} [${tagName}]:`, {
-            text: text,
-            className: className,
-            id: id,
-            role: role,
-            disabled: (el as HTMLButtonElement).disabled,
-            visible: (el as HTMLElement).offsetParent !== null
-        });
-        
-        // Highlight potential matches
-        if (text.toLowerCase().includes('edit') || text.toLowerCase().includes('profile')) {
-            console.log('🎯 POTENTIAL MATCH:', text, 'on element:', tagName, className);
+        const editButtons = Array.from(modal.querySelectorAll('button')).filter(btn => 
+            btn.textContent?.trim().toLowerCase().includes('edit profile')
+        );
+
+        if (editButtons.length > 0 && zIndex > highestZIndex) {
+            highestZIndex = zIndex;
+            topModal = modal;
+            console.log(`🎯 New top modal candidate for Edit Profile with z-index: ${zIndex}`);
         }
-    });
-    
-    // Look for popup/modal containers
-    const modalContainers = Array.from(document.querySelectorAll('div[role="dialog"], .modal, .popup, [class*="modal"], [class*="dialog"], [class*="popup"], [data-testid*="modal"], [data-testid*="dialog"]'));
-    console.log('📊 Modal containers found:', modalContainers.length);
-    
-    modalContainers.forEach((container, index) => {
-        console.log(`📦 Modal Container ${index}:`, {
-            className: (container as HTMLElement).className,
-            id: (container as HTMLElement).id,
-            innerHTML: (container as HTMLElement).innerHTML.substring(0, 200) + '...'
-        });
-    });
-    
-    // Try to find Edit Profile button with various strategies (REORDERED FOR PRIORITY)
-    const strategies = [
-        // Strategy 1: Look for specific button class css-tbj7bz FIRST (from logs)
-        () => {
-            console.log('🎯 Strategy 1 (PRIORITY): Look for css-tbj7bz button class');
-            const specificButtons = Array.from(document.querySelectorAll('button.css-tbj7bz, button[class*="tbj7bz"]'));
-            console.log('🔍 Found', specificButtons.length, 'buttons with css-tbj7bz class');
-            
-            for (const btn of specificButtons) {
+    }
+
+    if (topModal) {
+        console.log(`🎯 Using TOP MODAL for Edit Profile with highest z-index: ${highestZIndex}`);
+        const buttonsInModal = Array.from(topModal.querySelectorAll('button'));
+        for (const btn of buttonsInModal) {
                 const text = btn.textContent?.trim().toLowerCase();
-                console.log('🔍 Checking css-tbj7bz button text:', text);
-                
-                if (text === 'edit profile') {
-                    console.log('🎯 PRIORITY TARGET FOUND: Edit Profile button with css-tbj7bz class!');
-                    return btn;
-                }
-            }
-            return null;
-        },
-        
-        // Strategy 2: Exact text match IN POPUP CONTEXT ONLY with validation
-        () => {
-            console.log('🎯 Strategy 2: Exact text match in popup context with validation');
-            
-            // Find all "Edit Profile" buttons
-            const allEditProfileButtons = Array.from(document.querySelectorAll('*')).filter(el => {
-                const text = el.textContent?.trim();
-                return text === 'Edit Profile';
-            });
-            
-            console.log('🔍 Found', allEditProfileButtons.length, '"Edit Profile" buttons total');
-            
-            // Try to find the one in a modal container first
-            for (const modal of modalContainers) {
-                const elements = Array.from(modal.querySelectorAll('*'));
-                const found = elements.find(el => {
-                    const text = el.textContent?.trim();
-                    if (text !== 'Edit Profile') return false;
-                    
-                    // Additional validation: should be a button element
-                    if (el.tagName.toLowerCase() !== 'button') return false;
-                    
-                    // Check if it's actually visible and clickable
-                    const style = window.getComputedStyle(el);
-                    if (style.display === 'none' || style.visibility === 'hidden') return false;
-                    
-                    console.log('🎯 Found valid "Edit Profile" button inside modal container:', {
-                        className: (el as HTMLElement).className,
-                        tagName: el.tagName,
-                        visible: style.display !== 'none' && style.visibility !== 'hidden'
-                    });
-                    return true;
-                });
-                if (found) return found;
-            }
-            
-            // If not found in modals, look for the popup-specific one
-            // The popup Edit Profile button should have specific styling (yellow background)
-            return allEditProfileButtons.find(el => {
-                const style = window.getComputedStyle(el);
-                const parent = el.closest('[role="dialog"], .modal, .popup, [class*="modal"], [class*="dialog"], [class*="popup"]');
-                
-                // Must be in a modal-like container
-                if (!parent) return false;
-                
-                // Must be a button
-                if (el.tagName.toLowerCase() !== 'button') return false;
-                
-                // Must be visible
-                if (style.display === 'none' || style.visibility === 'hidden') return false;
-                
-                // Check for yellow/primary styling (from your image)
-                const hasYellowStyling = style.backgroundColor.includes('yellow') || 
-                                       style.backgroundColor.includes('rgb(255, 255, 0)') ||
-                                       (el as HTMLElement).className.includes('primary') ||
-                                       (el as HTMLElement).className.includes('tbj7bz'); // From your logs
-                
-                if (hasYellowStyling) {
-                    console.log('🎯 Found yellow-styled "Edit Profile" button in modal:', {
-                        className: (el as HTMLElement).className,
-                        backgroundColor: style.backgroundColor,
-                        parentClassName: parent.className
-                    });
-                    return true;
-                }
-                
-                return false;
-            });
-        },
-        
-        // Strategy 2: Case insensitive text match
-        () => {
-            console.log('🎯 Strategy 2: Case insensitive');
-            return Array.from(document.querySelectorAll('*')).find(el => {
-                const text = el.textContent?.trim().toLowerCase();
-                return text === 'edit profile';
-            });
-        },
-        
-        // Strategy 3: Contains text match
-        () => {
-            console.log('🎯 Strategy 3: Contains text');
-            return Array.from(document.querySelectorAll('*')).find(el => {
-                const text = el.textContent?.trim().toLowerCase();
-                return text.includes('edit profile');
-            });
-        },
-        
-        // Strategy 4: Button elements only
-        () => {
-            console.log('🎯 Strategy 4: Button elements only');
-            return Array.from(document.querySelectorAll('button')).find(btn => {
-                const text = btn.textContent?.trim().toLowerCase();
-                return text.includes('edit') && text.includes('profile');
-            });
-        },
-        
-        // Strategy 5: Yellow/highlighted elements IN POPUP
-        () => {
-            console.log('🎯 Strategy 5: Yellow/highlighted elements in popup');
-            // Look for yellow/highlighted buttons specifically in modal containers
-            for (const modal of modalContainers) {
-                const highlightedElements = Array.from(modal.querySelectorAll('button[style*="yellow"], button[class*="yellow"], button[style*="background"], button[class*="primary"], button[class*="highlight"], button'));
-                const found = highlightedElements.find(el => {
-                    const text = el.textContent?.trim().toLowerCase();
-                    const style = window.getComputedStyle(el);
-                    
-                    // Check for "Edit Profile" text
                     if (text === 'edit profile') {
-                        console.log('🎯 Found yellow/highlighted "Edit Profile" button in modal');
-                        return true;
-                    }
-                    
-                    // Check for yellow background or primary styling
-                    if ((text.includes('edit') && text.includes('profile')) && 
-                        (style.backgroundColor.includes('yellow') || 
-                         style.backgroundColor.includes('rgb(255, 255, 0)') ||
-                         el.className.includes('primary') ||
-                         el.className.includes('yellow'))) {
-                        console.log('🎯 Found styled Edit Profile button:', style.backgroundColor, el.className);
-                        return true;
-                    }
-                    
-                    return false;
-                });
-                if (found) return found;
-            }
-            return null;
-        },
-        
-        // Strategy 6: Look inside modal containers (generic)
-        () => {
-            console.log('🎯 Strategy 6: Inside modal containers (generic)');
-            for (const modal of modalContainers) {
-                const buttons = modal.querySelectorAll('button, [role="button"], input[type="button"]');
-                for (const btn of buttons) {
-                    const text = btn.textContent?.trim().toLowerCase();
-                    if (text.includes('edit') && text.includes('profile')) {
-                        return btn;
-                    }
-                }
-            }
-            return null;
-        }
-    ];
-    
-    // Try each strategy
-    for (let i = 0; i < strategies.length; i++) {
-        try {
-            const element = strategies[i]();
-            if (element) {
-                console.log(`✅ Strategy ${i + 1} SUCCESS! Found element:`, {
-                    tagName: element.tagName,
-                    textContent: element.textContent?.trim(),
-                    className: (element as HTMLElement).className,
-                    id: (element as HTMLElement).id
-                });
-                
-                // Try to click it
-                console.log('🖱️ Attempting to click the element...');
-                (element as HTMLElement).click();
-                console.log('✅ Successfully clicked Edit Profile button!');
-                return;
-            } else {
-                console.log(`❌ Strategy ${i + 1} failed - no element found`);
-            }
-        } catch (error) {
-            console.log(`❌ Strategy ${i + 1} error:`, error);
-        }
-    }
-    
-    // If we get here, nothing worked
-    console.log('❌ ALL STRATEGIES FAILED');
-    console.log('🔍 Final attempt: Looking for ANY element with "Edit Profile" text...');
-    
-    // Last resort: find any element with the text and try to find a clickable parent
-    const textElements = Array.from(document.querySelectorAll('*')).filter(el => {
-        const text = el.textContent?.trim();
-        return text === 'Edit Profile';
-    });
-    
-    console.log('📊 Elements containing "Edit Profile" text:', textElements.length);
-    
-    for (const textEl of textElements) {
-        console.log('🔍 Checking element with "Edit Profile" text:', {
-            tagName: textEl.tagName,
-            className: (textEl as HTMLElement).className,
-            parentTagName: textEl.parentElement?.tagName,
-            parentClassName: textEl.parentElement?.className
-        });
-        
-        // Try clicking the element itself
-        try {
-            (textEl as HTMLElement).click();
-            console.log('✅ Successfully clicked text element!');
-            return;
-        } catch (e) {
-            console.log('❌ Failed to click text element:', e);
-        }
-        
-        // Try clicking the parent
-        if (textEl.parentElement) {
-            try {
-                textEl.parentElement.click();
-                console.log('✅ Successfully clicked parent element!');
-                return;
-            } catch (e) {
-                console.log('❌ Failed to click parent element:', e);
+                console.log('✅ Found exact "Edit Profile" button in top modal');
+                (btn as HTMLElement).click();
+                await saveLog(`✅ Clicked Edit Profile button in modal with z-index ${highestZIndex}`);
+                return; // <-- BUG FIX: Exit after successful click
             }
         }
     }
-    
-    throw new Error('❌ Could not find or click Edit Profile button in popup. Check console for extensive debugging info.');
+
+    // STRATEGY 2 (FALLBACK): Find any visible "Edit Profile" button
+    console.log('🎯 Strategy 2 (FALLBACK): Find any visible "Edit Profile" button.');
+    const allButtons = Array.from(document.querySelectorAll('button'));
+    for(const btn of allButtons) {
+        if(btn.textContent?.trim().toLowerCase() === 'edit profile' && (btn as HTMLElement).offsetParent !== null) {
+            console.log('🎯 Found visible "Edit Profile" button as a fallback.');
+            (btn as HTMLElement).click();
+            await saveLog('✅ Clicked Edit Profile button via fallback');
+            return; // <-- BUG FIX: Exit after successful click
+        }
+    }
+
+    await saveLog('❌ ALL STRATEGIES FAILED: Could not find Edit Profile button in popup');
+    throw new Error('Edit Profile button not found in popup');
 };
 
 const occupancyStep6Download = async (): Promise<void> => {
     console.log('📝 Occupancy Step 6: Looking for Download button in popup...');
-    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for popup to fully load
+    await saveLog('📝 Occupancy Step 6: Looking for Download button...');
     
-    // EXTENSIVE DEBUGGING: Let's see ALL the modal containers
+    // STRATEGY 1 (PRIORITY): Highest Z-Index Modal Detection from successful documentation
+    console.log('🎯 Strategy 1 (PRIORITY): Highest z-index modal detection');
     const modalContainers = Array.from(document.querySelectorAll([
-        '[role="dialog"]',
-        '[role="modal"]', 
-        '.chakra-modal__content',
-        '.modal',
-        '.popup',
-        '[data-testid*="modal"]',
-        '[class*="modal"]',
-        '[class*="popup"]',
-        '[class*="dialog"]'
+        '[role="dialog"]', '[role="modal"]', '.chakra-modal__content', '.modal', '.popup',
+        '[data-testid*="modal"]', '[class*="modal"]', '[class*="popup"]', '[class*="dialog"]'
     ].join(', ')));
     
     console.log('📊 Modal containers found for download:', modalContainers.length);
     
-    // DEBUG: Log details about each modal container
-    modalContainers.forEach((modal, index) => {
-        const isVisible = (modal as HTMLElement).offsetParent !== null;
-        const zIndex = window.getComputedStyle(modal as HTMLElement).zIndex;
-        const className = (modal as HTMLElement).className;
-        const id = (modal as HTMLElement).id;
-        const rect = modal.getBoundingClientRect();
-        
-        console.log(`📦 Modal ${index}:`, {
-            visible: isVisible,
-            zIndex: zIndex,
-            className: className,
-            id: id,
-            width: rect.width,
-            height: rect.height,
-            top: rect.top,
-            left: rect.left
-        });
-        
-        // Look for download buttons in this specific modal
-        const downloadButtons = Array.from(modal.querySelectorAll('button, a, [role="button"]')).filter(btn => {
-            const text = btn.textContent?.trim().toLowerCase();
-            const title = btn.getAttribute('title')?.toLowerCase();
-            return text?.includes('download') || title?.includes('download');
-        });
-        
-        console.log(`🔍 Modal ${index} has ${downloadButtons.length} download buttons`);
-        
-        downloadButtons.forEach((btn, btnIndex) => {
-            const text = btn.textContent?.trim();
-            const title = btn.getAttribute('title');
-            const btnVisible = (btn as HTMLElement).offsetParent !== null;
-            const btnEnabled = !(btn as HTMLButtonElement).disabled;
-            const btnClassName = (btn as HTMLElement).className;
-            const btnRect = btn.getBoundingClientRect();
-            
-            console.log(`  🔍 Button ${btnIndex} in Modal ${index}:`, {
-                text: text,
-                title: title,
-                visible: btnVisible,
-                enabled: btnEnabled,
-                className: btnClassName,
-                width: btnRect.width,
-                height: btnRect.height,
-                top: btnRect.top,
-                left: btnRect.left
-            });
-        });
-    });
-    
-    // Strategy 1: Look for the TOPMOST/HIGHEST z-index modal with download buttons
-    let topModal = null;
+    let topModal: Element | null = null;
     let highestZIndex = -1;
     
     for (const modal of modalContainers) {
@@ -1201,145 +906,58 @@ const occupancyStep6Download = async (): Promise<void> => {
         
         const zIndex = parseInt(window.getComputedStyle(modal as HTMLElement).zIndex) || 0;
         
-        // Check if this modal has download buttons
-        const downloadButtons = Array.from(modal.querySelectorAll('button, a, [role="button"]')).filter(btn => {
-            const text = btn.textContent?.trim().toLowerCase();
-            const title = btn.getAttribute('title')?.toLowerCase();
-            return text?.includes('download') || title?.includes('download');
-        });
+        // CRUCIAL FIX: Only consider modals that actually contain a download button
+        const downloadButtons = Array.from(modal.querySelectorAll('button')).filter(btn => 
+            btn.textContent?.trim().toLowerCase().includes('download')
+        );
+
+        console.log(`  - Modal check: z-index ${zIndex}, visible: ${isVisible}, download buttons: ${downloadButtons.length}`);
         
         if (downloadButtons.length > 0 && zIndex > highestZIndex) {
             highestZIndex = zIndex;
             topModal = modal;
-            console.log('🎯 New top modal candidate with z-index:', zIndex, 'and', downloadButtons.length, 'download buttons');
+            console.log(`🎯 New top modal candidate with z-index: ${zIndex}`);
         }
     }
     
     if (topModal) {
-        console.log('🎯 Using TOP MODAL with highest z-index:', highestZIndex);
+        console.log(`🎯 Using TOP MODAL with highest z-index: ${highestZIndex}`);
+        await saveLog(`🎯 Using TOP MODAL with highest z-index: ${highestZIndex}`);
         
-        const downloadButtons = Array.from(topModal.querySelectorAll('button, a, [role="button"]')).filter(btn => {
+        const buttonsInModal = Array.from(topModal.querySelectorAll('button'));
+        for (const btn of buttonsInModal) {
             const text = btn.textContent?.trim().toLowerCase();
-            const title = btn.getAttribute('title')?.toLowerCase();
-            return text?.includes('download') || title?.includes('download');
-        });
-        
-        for (const btn of downloadButtons) {
-            const text = btn.textContent?.trim();
-            const title = btn.getAttribute('title');
-            const isVisible = (btn as HTMLElement).offsetParent !== null;
-            const isEnabled = !(btn as HTMLButtonElement).disabled;
-            
-            console.log('🔍 Top modal download button:', {
-                text: text,
-                title: title,
-                visible: isVisible,
-                enabled: isEnabled,
-                className: (btn as HTMLElement).className
-            });
-            
-            if (isVisible && isEnabled) {
-                console.log('🎯 FOUND TOP MODAL DOWNLOAD BUTTON:', text || title);
+            if (text === 'download') { // Exact match
+                console.log('✅ Found exact "Download" button in top modal');
+                await saveLog('✅ Found exact "Download" button in top modal');
                 (btn as HTMLElement).click();
-                console.log('✅ Clicked top modal Download button - file should start downloading');
-                return;
+                console.log('✅ Clicked Download button');
+                await saveLog('✅ Clicked Download button');
+                return; // <-- BUG FIX: Exit after successful click
             }
         }
     }
-    
-    // Strategy 2: Look for EXACT "Download" text (not "Download Prices" or "Download as CSV")
-    console.log('🔍 Strategy 2: Looking for EXACT "Download" text...');
-    const allButtons = Array.from(document.querySelectorAll('button, a, [role="button"]'));
-    
-    for (const btn of allButtons) {
-        const text = btn.textContent?.trim();
-        
-        // Look for EXACTLY "Download" (case insensitive)
-        if (text?.toLowerCase() === 'download') {
-            const isVisible = (btn as HTMLElement).offsetParent !== null;
-            const isEnabled = !(btn as HTMLButtonElement).disabled;
-            const rect = btn.getBoundingClientRect();
-            
-            console.log('🎯 FOUND EXACT "Download" BUTTON:', {
-                text: text,
-                visible: isVisible,
-                enabled: isEnabled,
-                className: (btn as HTMLElement).className,
-                width: rect.width,
-                height: rect.height,
-                top: rect.top,
-                left: rect.left
-            });
-            
-            if (isVisible && isEnabled) {
-                console.log('✅ Clicking EXACT "Download" button');
-                (btn as HTMLElement).click();
-                console.log('✅ Clicked exact Download button - file should start downloading');
-                return;
-            }
-        }
-    }
-    
-    // Strategy 3: Look for yellow/highlighted download button
-    console.log('🔍 Strategy 3: Looking for highlighted download button...');
-    const highlightButtons = Array.from(document.querySelectorAll('button, a, [role="button"]'));
-    
-    for (const btn of highlightButtons) {
-        const text = btn.textContent?.trim().toLowerCase();
-        const title = btn.getAttribute('title')?.toLowerCase();
-        
-        if (!(text?.includes('download') || title?.includes('download'))) continue;
-        
-        const styles = window.getComputedStyle(btn as HTMLElement);
-        const className = (btn as HTMLElement).className;
-        
-        // Check for yellow/primary styling or specific classes
-        const isHighlighted = styles.backgroundColor.includes('255, 193, 7') || // Bootstrap yellow
-                            styles.backgroundColor.includes('yellow') ||
-                            className.includes('yellow') ||
-                            className.includes('primary') ||
-                            className.includes('highlight') ||
-                            className.includes('btn-warning'); // Bootstrap warning (yellow)
-        
-        if (isHighlighted) {
-            console.log('🎯 FOUND HIGHLIGHTED DOWNLOAD BUTTON:', btn.textContent?.trim() || btn.getAttribute('title'));
-            (btn as HTMLElement).click();
-            console.log('✅ Clicked highlighted Download button - file should start downloading');
-            return;
-        }
-    }
-    
-    // Strategy 3: Generic download button (fallback)
-    console.log('🔍 Strategy 3: Generic download button search...');
-    const allDownloadButtons = Array.from(document.querySelectorAll('button, a')).filter(btn => {
-        const text = btn.textContent?.toLowerCase() || '';
-        const title = btn.getAttribute('title')?.toLowerCase() || '';
-        return text.includes('download') || title.includes('download');
-    });
-    
-    console.log('📊 Total download buttons found:', allDownloadButtons.length);
-    
-    for (let i = 0; i < allDownloadButtons.length; i++) {
-        const btn = allDownloadButtons[i];
-        console.log(`🔍 Download button ${i + 1}:`, btn.textContent?.trim() || btn.getAttribute('title'));
-    }
-    
-    if (allDownloadButtons.length > 0) {
-        // Try the first visible download button
-        for (const btn of allDownloadButtons) {
-            const isVisible = (btn as HTMLElement).offsetParent !== null;
-            if (isVisible) {
-                console.log('⚠️ Using fallback download button:', btn.textContent?.trim() || btn.getAttribute('title'));
-                (btn as HTMLElement).click();
-                console.log('✅ Clicked Download button - file should start downloading');
-                return;
-            }
-        }
-    }
-    
-    throw new Error('❌ No download button found in popup or page');
-};
 
+    console.log('⚠️ Strategy 1 FAILED, trying fallback.');
+    await saveLog('⚠️ Strategy 1 FAILED, trying fallback.');
+
+    // STRATEGY 2 (FALLBACK): Find any visible button with the exact text "Download"
+    console.log('🎯 Strategy 2 (FALLBACK): Find any visible "Download" button.');
+    const allButtons = Array.from(document.querySelectorAll('button'));
+    for(const btn of allButtons) {
+        if(btn.textContent?.trim().toLowerCase() === 'download' && (btn as HTMLElement).offsetParent !== null) {
+            console.log('🎯 Found visible "Download" button as a fallback.');
+            await saveLog('🎯 Found visible "Download" button as a fallback.');
+                (btn as HTMLElement).click();
+            console.log('✅ Clicked Download button');
+            await saveLog('✅ Clicked Download button');
+            return; // <-- BUG FIX: Exit after successful click
+        }
+    }
+
+    await saveLog('❌ ALL STRATEGIES FAILED: Could not find Download button');
+    throw new Error('Download button not found in popup');
+};
 
 const occupancyStep7ClosePopup = async (): Promise<void> => {
     console.log('📝 Occupancy Step 7: Closing popup by clicking X button...');
@@ -1532,81 +1150,46 @@ const navigationStep1DynamicPricing = async (): Promise<void> => {
 };
 
 const navigationStep2Customizations = async (): Promise<void> => {
-    console.log('📝 Navigation Step 2: Selecting Customizations from dropdown...');
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for dropdown to open
+    console.log('📝 Nav Step 2: Looking for "Customizations" link with new, stricter logic...');
+    await saveLog('📝 Nav Step 2: Looking for "Customizations" link');
+
+    // Wait for the dropdown menu to fully appear
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Slightly longer wait for menu
+
+    const allLinks = Array.from(document.querySelectorAll('a, [role="menuitem"]')) as HTMLElement[];
     
-    // Strategy 1: Look for "Customizations" in dropdown/menu items
-    const dropdownItems = Array.from(document.querySelectorAll([
-        '[role="menuitem"]',
-        '[role="option"]',
-        '.dropdown-item',
-        '.menu-item',
-        '[class*="dropdown"] a',
-        '[class*="menu"] a',
-        '[class*="dropdown"] button',
-        '[class*="menu"] button',
-        'li a',
-        'li button'
-    ].join(', ')));
-    
-    console.log('🔍 Found', dropdownItems.length, 'potential dropdown items');
-    
-    for (let i = 0; i < dropdownItems.length; i++) {
-        const item = dropdownItems[i];
-        const text = item.textContent?.trim();
-        const isVisible = (item as HTMLElement).offsetParent !== null;
-        const isEnabled = !(item as HTMLButtonElement).disabled;
-        
-        console.log(`🔍 Dropdown item ${i + 1}:`, {
-            text: text,
-            tagName: item.tagName,
-            className: (item as HTMLElement).className,
-            visible: isVisible,
-            enabled: isEnabled
-        });
-        
-        if (text?.toLowerCase().includes('customizations') || text?.toLowerCase().includes('customization')) {
-            if (isVisible && isEnabled) {
-                console.log('🎯 FOUND CUSTOMIZATIONS OPTION:', text);
-                (item as HTMLElement).click();
-                console.log('✅ Clicked Customizations option');
-                return;
-            }
-        }
-    }
-    
-    // Strategy 2: Look for the BOTTOM option in the dropdown (as specified)
-    console.log('🔍 Strategy 2: Looking for bottom option in dropdown...');
-    const visibleItems = dropdownItems.filter(item => {
-        const isVisible = (item as HTMLElement).offsetParent !== null;
-        const isEnabled = !(item as HTMLButtonElement).disabled;
-        return isVisible && isEnabled;
-    });
-    
-    if (visibleItems.length > 0) {
-        const bottomItem = visibleItems[visibleItems.length - 1];
-        const text = bottomItem.textContent?.trim();
-        
-        console.log('🔍 Bottom dropdown option:', {
-            text: text,
-            tagName: bottomItem.tagName,
-            className: (bottomItem as HTMLElement).className
-        });
-        
-        if (text?.toLowerCase().includes('customizations') || text?.toLowerCase().includes('customization')) {
-            console.log('🎯 FOUND BOTTOM CUSTOMIZATIONS OPTION:', text);
-            (bottomItem as HTMLElement).click();
-            console.log('✅ Clicked bottom Customizations option');
+    // STRATEGY 1 (PRIORITY): Find a link with an href pointing to the customizations page.
+    for (const link of allLinks) {
+        const href = (link as HTMLAnchorElement).href || '';
+        const isVisible = link.offsetParent !== null;
+        if (isVisible && href.includes('/customization')) {
+            await saveLog(`✅ Nav Step 2: Found PERFECT MATCH by href: ${href}`);
+            console.log(`✅ Nav Step 2: Found perfect match by href: ${href}`);
+            link.click();
             return;
-        } else {
-            console.log('⚠️ Bottom option does not contain "Customizations":', text);
         }
     }
-    
-    throw new Error('❌ Customizations option not found in dropdown');
+
+    // STRATEGY 2 (FALLBACK): Find by exact text match, ensuring it's not another link.
+    console.log('⚠️ Nav Step 2: Href strategy failed. Falling back to text search.');
+    for (const link of allLinks) {
+        const text = link.textContent?.trim().toLowerCase() || '';
+        const isVisible = link.offsetParent !== null;
+
+        if (isVisible && text === 'customizations') {
+            await saveLog(`✅ Nav Step 2: Found fallback match by exact text: "${text}"`);
+            console.log(`✅ Nav Step 2: Found fallback match by exact text: "${link.textContent}"`);
+            link.click();
+            return;
+        }
+    }
+
+    await saveLog('❌ Nav Step 2: All strategies failed to find a valid "Customizations" link.');
+    throw new Error('"Customizations" link not found in dropdown');
 };
 
 const navigationStep3Complete = async (): Promise<void> => {
+    console.log('📝 Navigation Step 3: Completing navigation...');
     console.log('🎉 Navigation Step 3: Navigation to Customizations completed!');
     
     // Check if we're on the Customizations page
@@ -3147,65 +2730,73 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     return { type: 'SUCCESS' };
                 }
                 case 'OCCUPANCY_STEP_3_CONFIRM_EDIT': {
-                    await occupancyStep5ConfirmEdit(); // Reuse the confirm edit function
+                    await occupancyStep5ConfirmEdit(); // FIX: Call the correct existing function for the popup edit
                     return { type: 'SUCCESS' };
                 }
                 case 'OCCUPANCY_STEP_4_DOWNLOAD': {
-                    await occupancyStep6Download(); // Reuse the download function
+                    await occupancyStep4Download();
                     return { type: 'SUCCESS' };
                 }
                 case 'OCCUPANCY_STEP_5_CLOSE_POPUP': {
-                    await occupancyStep7ClosePopup(); // Close the popup
+                    await occupancyStep5ConfirmEdit();
                     return { type: 'SUCCESS' };
                 }
-                case 'OCCUPANCY_STEP_6_COMPLETE': {
-                    await occupancyStep8Complete(); // Final completion
+                case 'OCCUPANCY_STEP_6_DOWNLOAD': {
+                    await occupancyStep6Download();
+                    return { type: 'SUCCESS' };
+                }
+                case 'OCCUPANCY_STEP_7_CLOSE_POPUP': {
+                    await occupancyStep7ClosePopup();
+                    return { type: 'SUCCESS' };
+                }
+                case 'OCCUPANCY_STEP_8_COMPLETE': {
+                    await occupancyStep8Complete();
                     return { type: 'SUCCESS' };
                 }
                 case 'NAVIGATION_STEP_1_DYNAMIC_PRICING': {
-                    await navigationStep1DynamicPricing(); // Click Dynamic Pricing dropdown
+                    await navigationStep1DynamicPricing();
                     return { type: 'SUCCESS' };
                 }
                 case 'NAVIGATION_STEP_2_CUSTOMIZATIONS': {
-                    await navigationStep2Customizations(); // Select Customizations option
+                    await navigationStep2Customizations();
                     return { type: 'SUCCESS' };
                 }
                 case 'NAVIGATION_STEP_3_COMPLETE': {
-                    await navigationStep3Complete(); // Navigation complete
+                    await navigationStep3Complete();
                     return { type: 'SUCCESS' };
                 }
                 case 'CUSTOMIZATIONS_STEP_1_LISTINGS': {
-                    await customizationsStep1Listings(); // Select Listings tab
+                    await customizationsStep1Listings();
                     return { type: 'SUCCESS' };
                 }
                 case 'CUSTOMIZATIONS_STEP_2_TABLE_VIEW': {
-                    await customizationsStep2TableView(); // Select Table View icon
+                    await customizationsStep2TableView();
                     return { type: 'SUCCESS' };
                 }
                 case 'CUSTOMIZATIONS_STEP_3_DOWNLOAD_ALL': {
-                    await customizationsStep3DownloadAll(); // Download Customizations for all Listings
+                    await customizationsStep3DownloadAll();
                     return { type: 'SUCCESS' };
                 }
                 case 'CUSTOMIZATIONS_STEP_4_COMPLETE': {
-                    await customizationsStep4Complete(); // Complete customizations workflow
+                    await customizationsStep4Complete();
                     return { type: 'SUCCESS' };
                 }
                 case 'MARKET_RESEARCH_STEP_1_DROPDOWN': {
-                    await marketResearchStep1Dropdown(); // Click Market Research dropdown
+                    await marketResearchStep1Dropdown();
                     return { type: 'SUCCESS' };
                 }
                 case 'MARKET_RESEARCH_STEP_2_MARKET_DASHBOARD': {
-                    await marketResearchStep2MarketDashboard(); // Select Market Dashboard option
+                    await marketResearchStep2MarketDashboard();
                     return { type: 'SUCCESS' };
                 }
                 case 'MARKET_RESEARCH_STEP_3_COMPLETE': {
-                    await marketResearchStep3Complete(); // Complete market research navigation
+                    await marketResearchStep3Complete();
                     return { type: 'SUCCESS' };
                 }
                 case 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD': {
                     try {
                         console.log('🔍 MESSAGE HANDLER: Starting MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD');
-                        await marketResearchStep4ShowDashboard(); // Click Show Dashboard button
+                        await marketResearchStep4ShowDashboard();
                         console.log('✅ MESSAGE HANDLER: MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD completed successfully');
                         return { type: 'SUCCESS' };
                     } catch (error) {
@@ -3217,15 +2808,15 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     }
                 }
                 case 'MARKET_RESEARCH_STEP_5_COMPLETE': {
-                    await marketResearchStep5Complete(); // Complete show dashboard workflow (with 15s wait)
+                    await marketResearchStep5Complete();
                     return { type: 'SUCCESS' };
                 }
                 case 'MARKET_RESEARCH_STEP_6_DOWNLOAD_PDF': {
-                    await marketResearchStep6DownloadPDF(); // Click Download as PDF button (with 15s wait)
+                    await marketResearchStep6DownloadPDF();
                     return { type: 'SUCCESS' };
                 }
                 case 'MARKET_RESEARCH_STEP_7_COMPLETE': {
-                    await marketResearchStep7Complete(); // Complete PDF download workflow
+                    await marketResearchStep7Complete();
                     return { type: 'SUCCESS' };
                 }
                 case 'CLICK_ELEMENT': {
