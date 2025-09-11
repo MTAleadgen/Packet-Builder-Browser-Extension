@@ -1212,7 +1212,7 @@ async function proceedAfterInitialSteps() {
 
     // Step 17: Wait for PDF download
     await updateState({ step: 17, message: 'Step 18: Waiting for PDF download to start...' });
-    await new Promise(resolve => setTimeout(resolve, 25000)); // USER CHANGE: 30s -> 25s
+    await new Promise(resolve => setTimeout(resolve, 120000)); // USER CHANGE: 30s -> 25s
 
     // --- End of Part 2, now proceed to Airbnb ---
     await proceedToAirbnbWorkflow();
