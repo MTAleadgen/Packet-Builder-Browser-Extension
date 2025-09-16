@@ -57,6 +57,8 @@ export type ContentScriptMessage =
   | { type: 'WAIT_FOR_ELEMENT', selector: string, timeout?: number }
   | { type: 'SELECT_AIRBNB_LISTING', listingName: string } // Example, adapt as needed
   | { type: 'TOGGLE_PRICE_TIPS' }
+  | { type: 'EXTRACT_PRICE_TIPS' }
+  | { type: 'EXPORT_PRICE_TIPS_CSV', priceData: any[] }
   | { type: 'READ_SERVER_BASE_PRICE' }
   | { type: 'SNAPSHOT_CALENDAR_PRICES' }
   | { type: 'CHECK_CALENDAR_UPDATED' }

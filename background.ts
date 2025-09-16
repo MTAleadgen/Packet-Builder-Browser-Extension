@@ -13,7 +13,7 @@ let apiTokenGlobal: string | undefined;
 let didAirbnbTips = false;
 // Clean zoom implementation with proper storage keys
 const ZOOM_OUT = 0.25;
-const zk = id => `zoom_${id}`, wk = id => `win_${id}`;
+const zk = (id: number | string) => `zoom_${id}`, wk = (id: number | string) => `win_${id}`;
 
 async function getActive(){ return (await chrome.tabs.query({active:true,currentWindow:true}))[0]; }
 
@@ -99,7 +99,7 @@ chrome.runtime.onStartup.addListener(() => {
     });
 });
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
     console.log('Background received message:', message);
     
     switch (message.type) {
@@ -347,7 +347,7 @@ async function resumeMarketResearchWorkflow(startStep: number) {
                 console.log('⚠️ Show Dashboard click failed once, retrying after reinjection...', (e as Error)?.message);
                 await injectScript(originalTabId!);
                 await waitForTabLoad(originalTabId!);
-                await new Promise(res => setTimeout(resolve, 2000));
+                await new Promise(res => setTimeout(res, 2000));
                 await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD' });
             }
         }
@@ -675,7 +675,7 @@ async function injectScript(tabId: number): Promise<void> {
                 target: { tabId: tabId },
                 files: ['lib/jszip.min.js'],
             },
-            (jszipResults) => {
+            (jszipResults: chrome.scripting.InjectionResult[]) => {
                 if (chrome.runtime.lastError) {
                     console.warn('JSZip injection warning:', chrome.runtime.lastError.message);
                     // Continue anyway - not critical for basic functionality
@@ -689,7 +689,7 @@ async function injectScript(tabId: number): Promise<void> {
                 target: { tabId: tabId },
                 files: ['content.js'],
             },
-                    (contentResults) => {
+                    (contentResults: chrome.scripting.InjectionResult[]) => {
                         if (chrome.runtime.lastError) {
                             reject(new Error(`Failed to inject content script: ${chrome.runtime.lastError.message}`));
                         } else {
@@ -749,10 +749,10 @@ async function installNetworkLoggerInMainWorld(tabId: number): Promise<void> {
 				};
 				const origOpen = XMLHttpRequest.prototype.open;
 				const origSend = XMLHttpRequest.prototype.send;
-				XMLHttpRequest.prototype.open = function(method: string, url: string) { (this as any).__pcpUrl = url; (this as any).__pcpMethod = method; return origOpen.apply(this, arguments as any); } as any;
-				XMLHttpRequest.prototype.send = function(body?: Document | BodyInit | null) {
+				XMLHttpRequest.prototype.open = function(this: XMLHttpRequest, method: string, url: string) { (this as any).__pcpUrl = url; (this as any).__pcpMethod = method; return origOpen.apply(this, arguments as any); } as any;
+				XMLHttpRequest.prototype.send = function(this: XMLHttpRequest, body?: Document | BodyInit | null) {
 					const xhr = this as any; const start = Date.now();
-					xhr.addEventListener('loadend', function() {
+					xhr.addEventListener('loadend', function(this: XMLHttpRequest) {
 						const dur = Date.now() - start; let bodyPreview = '';
 						try { if (typeof body === 'string') bodyPreview = (body as string).slice(0, 500); else if (body && typeof body === 'object') bodyPreview = `[${(body as any).constructor?.name}]`; } catch {}
 						try { console.log('📡 XHR', { method: xhr.__pcpMethod || '', url: xhr.__pcpUrl || '', status: xhr.status, ms: dur, bodyPreview }); } catch {}
@@ -1125,33 +1125,38 @@ async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
 async function proceedAfterInitialSteps() {
     // This function orchestrates the first major sequence on PriceLabs.
     
-    // Step 4: Sync Now
-    await updateState({ step: 4, message: 'Step 4: Clicking Sync Now button...' });
+    // Step 4: Save & Refresh
+    await updateState({ step: 4, message: 'Step 4: Clicking Save & Refresh button...' });
+    await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
+    await new Promise(res => setTimeout(res, 0));
+
+    // Step 5: Sync Now
+    await updateState({ step: 5, message: 'Step 5: Clicking Sync Now button...' });
     await sendMessageToTab(originalTabId, { type: 'SYNC_NOW' });
     await new Promise(res => setTimeout(res, 0)); // USER CHANGE: 2s -> 0s
 
-    // Step 5: Edit Button
-    await updateState({ step: 5, message: 'Step 5: Clicking Edit button...' });
+    // Step 6: Edit Button
+    await updateState({ step: 6, message: 'Step 6: Clicking Edit button...' });
     await sendMessageToTab(originalTabId, { type: 'EDIT_BUTTON' });
     await new Promise(res => setTimeout(res, 0)); // USER CHANGE: 2s -> 0s
 
-    // Step 6: First "Edit Profile" button on main page
-    await updateState({ step: 6, message: 'Step 6: Clicking first Edit Profile button...' });
+    // Step 7: First "Edit Profile" button on main page
+    await updateState({ step: 7, message: 'Step 7: Clicking first Edit Profile button...' });
     await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
     await new Promise(res => setTimeout(res, 0)); // USER CHANGE: 2s -> 0s
 
-    // Step 7: "Edit Profile" button IN THE POPUP
-    await updateState({ step: 7, message: 'Step 7: Clicking Edit Profile button in popup...' });
+    // Step 8: "Edit Profile" button IN THE POPUP
+    await updateState({ step: 8, message: 'Step 8: Clicking Edit Profile button in popup...' });
     await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
     await new Promise(res => setTimeout(res, 0)); // USER CHANGE: 2s -> 0s
 
-    // Step 8: "Download" button IN THE POPUP
-    await updateState({ step: 8, message: 'Step 8: Clicking Download button...' });
-    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_6_DOWNLOAD' });
+    // Step 9: "Download" button IN THE POPUP
+    await updateState({ step: 9, message: 'Step 9: Clicking Download button...' });
+    await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_4_DOWNLOAD' });
     await new Promise(res => setTimeout(res, 2000)); // USER CHANGE: 3s -> 2s
 
-    // Step 9: Navigate directly to Customizations page
-    await updateState({ step: 9, message: 'Step 9: Navigating directly to Customizations page...' });
+    // Step 10: Navigate directly to Customizations page
+    await updateState({ step: 10, message: 'Step 10: Navigating directly to Customizations page...' });
     console.log('🔄 WORKFLOW: Navigating to https://app.pricelabs.co/customization');
     await persistLog('🔄 WORKFLOW: Navigating directly to Customizations page.');
     if (originalTabId) {
@@ -1164,24 +1169,24 @@ async function proceedAfterInitialSteps() {
     await new Promise(res => setTimeout(res, 1000)); // Wait 1s for page to fully load and stabilize.
     console.log('✅ WORKFLOW: Tab loaded, content script should be active.');
 
-    // Step 10: Select Listings tab
-    await updateState({ step: 10, message: 'Customizations Step 1: Selecting Listings tab...' });
+    // Step 11: Select Listings tab
+    await updateState({ step: 11, message: 'Customizations Step 1: Selecting Listings tab...' });
     console.log('🔄 WORKFLOW: Sending CUSTOMIZATIONS_STEP_1_LISTINGS');
     await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_1_LISTINGS' });
     await new Promise(res => setTimeout(res, 1000)); // USER CHANGE: 3s -> 1s
 
-    // Step 11: Select Table View
-    await updateState({ step: 11, message: 'Customizations Step 2: Selecting Table View...' });
+    // Step 12: Select Table View
+    await updateState({ step: 12, message: 'Customizations Step 2: Selecting Table View...' });
     await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_2_TABLE_VIEW' });
     await new Promise(res => setTimeout(res, 1000)); // USER CHANGE: 3s -> 1s
 
-    // Step 12: Download All as CSV
-    await updateState({ step: 12, message: 'Customizations Step 3: Downloading all as CSV...' });
+    // Step 13: Download All as CSV
+    await updateState({ step: 13, message: 'Customizations Step 3: Downloading all as CSV...' });
     await sendMessageToTab(originalTabId, { type: 'CUSTOMIZATIONS_STEP_3_DOWNLOAD_ALL' });
     await new Promise(res => setTimeout(res, 3000)); // NO CHANGE
 
-    // Step 13: Navigate directly to Market Research reports page
-    await updateState({ step: 13, message: 'Step 13: Navigating directly to Market Research...' });
+    // Step 14: Navigate directly to Market Research reports page
+    await updateState({ step: 14, message: 'Step 14: Navigating directly to Market Research...' });
     console.log('🔄 WORKFLOW: Navigating to https://app.pricelabs.co/reports');
     await persistLog('🔄 WORKFLOW: Navigating directly to Market Research reports page.');
     if (originalTabId) {
@@ -1194,8 +1199,8 @@ async function proceedAfterInitialSteps() {
     await new Promise(res => setTimeout(res, 2000)); // Wait 2s for page to fully load and stabilize.
     console.log('✅ WORKFLOW: Tab loaded, content script should be active.');
 
-    // Step 14 & 15: Show Dashboard & wait for it to load
-    await updateState({ step: 14, message: 'Step 14: Clicking Show Dashboard...' });
+    // Step 15 & 16: Show Dashboard & wait for it to load
+    await updateState({ step: 15, message: 'Step 15: Clicking Show Dashboard...' });
     try {
         await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_4_SHOW_DASHBOARD' });
     } catch (error) {
@@ -1203,15 +1208,15 @@ async function proceedAfterInitialSteps() {
         console.log(`🟡 INFO: Caught error during 'Show Dashboard' click, which is sometimes expected if the page reloads. Error: ${errorMessage}`);
         await persistLog(`🟡 INFO: Caught error during 'Show Dashboard' click, assuming success. Error: ${errorMessage}`);
     }
-    await updateState({ step: 15, message: 'Step 15: Waiting for Dashboard to load...' });
+    await updateState({ step: 16, message: 'Step 16: Waiting for Dashboard to load...' });
     await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10s for dashboard to load
 
-    // Step 16: Download PDF
-    await updateState({ step: 16, message: 'Step 17: Downloading as PDF...' });
+    // Step 17: Download PDF
+    await updateState({ step: 17, message: 'Step 17: Downloading as PDF...' });
     await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_6_DOWNLOAD_PDF' });
 
-    // Step 17: Wait for PDF download
-    await updateState({ step: 17, message: 'Step 18: Waiting for PDF download to start...' });
+    // Step 18: Wait for PDF download
+    await updateState({ step: 18, message: 'Step 18: Waiting for PDF download to start...' });
     await new Promise(resolve => setTimeout(resolve, 120000)); // USER CHANGE: 30s -> 25s
 
     // --- End of Part 2, now proceed to Airbnb ---
@@ -1221,39 +1226,39 @@ async function proceedAfterInitialSteps() {
 async function proceedToAirbnbWorkflow() {
     // Part 3: Airbnb Price Tips
     
-    // Step 18: Navigate to Airbnb
-    await updateState({ step: 18, message: 'Step 19: Navigating to Airbnb...' });
+    // Step 19: Navigate to Airbnb
+    await updateState({ step: 19, message: 'Step 19: Navigating to Airbnb...' });
     await navigateToAirbnbMulticalendar();
     console.log('⏳ Waiting for Airbnb page to load and stabilize...');
     await new Promise(resolve => setTimeout(resolve, 3000)); // USER CHANGE: 8s -> 3s
 
-    // Step 19: Click Price Tips button
-    await updateState({ step: 19, message: 'Step 20: Clicking Price Tips button...' });
+    // Step 20: Click Price Tips button
+    await updateState({ step: 20, message: 'Step 20: Clicking Price Tips button...' });
     await sendMessageToTab(originalTabId, { type: 'TOGGLE_PRICE_TIPS' });
     didAirbnbTips = true;
     await persistLog('Airbnb: Price Tips opened');
 
-    // Step 20: Zoom out
-    await updateState({ step: 20, message: 'Step 21: Zooming out...' });
+    // Step 21: Zoom out
+    await updateState({ step: 21, message: 'Step 21: Zooming out...' });
     await zoomFull(originalTabId);
     await new Promise(resolve => setTimeout(resolve, 0)); // USER CHANGE: 2s -> 0s
     
-    // Step 21: Extract price tips data
-    await updateState({ step: 21, message: 'Step 22: Extracting price tips data...' });
+    // Step 22: Extract price tips data
+    await updateState({ step: 22, message: 'Step 22: Extracting price tips data...' });
     const extractionResult = await sendMessageToTab(originalTabId, { type: 'EXTRACT_PRICE_TIPS' }) as any;
     const priceData = extractionResult.data || [];
 
-    // Step 22: Export to CSV
-    await updateState({ step: 22, message: 'Step 23: Exporting price tips to CSV...' });
+    // Step 23: Export to CSV
+    await updateState({ step: 23, message: 'Step 23: Exporting price tips to CSV...' });
     await sendMessageToTab(originalTabId, { type: 'EXPORT_PRICE_TIPS_CSV', priceData });
     await persistLog('Workflow: CSV export completed');
     
-    // Step 23 & 24: Restore API and Zoom
-    await updateState({ step: 23, message: 'Step 24 & 25: Restoring base price and zoom...' });
+    // Step 24 & 25: Restore API and Zoom
+    await updateState({ step: 24, message: 'Step 24 & 25: Restoring base price and zoom...' });
     await restoreBaseAndZoom();
 
-    // Step 25: Navigate back to PriceLabs
-    await updateState({ step: 25, message: 'Step 26: Navigating back to PriceLabs...' });
+    // Step 26: Navigate back to PriceLabs
+    await updateState({ step: 26, message: 'Step 26: Navigating back to PriceLabs...' });
     await navigateBackToPriceLabsIfPairStored();
     
     // --- End of Part 3, now proceed to Final Sequence ---
@@ -1288,23 +1293,28 @@ async function restoreBaseAndZoom() {
 async function proceedToFinalSequence() {
     // Part 4: Final PriceLabs Sequence
 
-    // Step 26: Sync Now
-    await updateState({ step: 26, message: 'Step 27: Clicking Sync Now...' });
+    // Step 27: Save & Refresh
+    await updateState({ step: 27, message: 'Step 27: Clicking Save & Refresh button...' });
+    await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    // Step 28: Sync Now
+    await updateState({ step: 28, message: 'Step 28: Clicking Sync Now...' });
     await sendMessageToTab(originalTabId, { type: 'SYNC_NOW' });
     await new Promise(resolve => setTimeout(resolve, 0)); // USER CHANGE: 1s -> 0s
 
-    // Step 27: Edit
-    await updateState({ step: 27, message: 'Step 28: Clicking Edit...' });
+    // Step 29: Edit
+    await updateState({ step: 29, message: 'Step 29: Clicking Edit...' });
     await sendMessageToTab(originalTabId, { type: 'EDIT_BUTTON' });
     await new Promise(resolve => setTimeout(resolve, 0)); // USER CHANGE: 1s -> 0s
 
-    // Step 28: Edit Profile (Main Page)
-    await updateState({ step: 28, message: 'Step 29: Clicking first Edit Profile button...' });
+    // Step 30: Edit Profile (Main Page)
+    await updateState({ step: 30, message: 'Step 30: Clicking first Edit Profile button...' });
     await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_2_SCROLL_FIND_EDIT_PROFILE' });
     await new Promise(resolve => setTimeout(resolve, 0)); // USER CHANGE: 1s -> 0s
 
-    // Step 29: Edit Profile (Popup)
-    await updateState({ step: 29, message: 'Step 30: Clicking Edit Profile button in popup...' });
+    // Step 31: Edit Profile (Popup)
+    await updateState({ step: 31, message: 'Step 31: Clicking Edit Profile button in popup...' });
     await sendMessageToTab(originalTabId, { type: 'OCCUPANCY_STEP_3_CONFIRM_EDIT' });
     await new Promise(resolve => setTimeout(resolve, 0)); // USER CHANGE: 1s -> 0s
 
