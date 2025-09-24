@@ -1089,10 +1089,18 @@ async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
 
         // THE FIX: Always use the newly fetched base price as the one to restore for this run.
         // This overwrites any stale data from previous workflow executions.
-        const originalBase = current?.base;
-        console.log('📝 Storing true original base price for this run:', originalBase);
-        await persistLog('Workflow: Storing true original base for this run', { originalBase });
-        await chrome.storage.local.set({ originalBase, originalListingId: listingId, originalPms: pms });
+        const originalBase = normalizeBaseValue(current?.base);
+        const storagePayload: Record<string, any> = { originalListingId: listingId, originalPms: pms };
+        if (typeof originalBase === 'number') {
+            console.log('📝 Storing true original base price for this run:', originalBase);
+            await persistLog('Workflow: Storing true original base for this run', { originalBase });
+            storagePayload.originalBase = originalBase;
+        } else {
+            console.warn('⚠️ No numeric base price returned from API to store for restoration.', { base: current?.base });
+            await persistLog('Workflow: Missing original base from API response', { base: current?.base });
+            await chrome.storage.local.remove(['originalBase']);
+        }
+        await chrome.storage.local.set(storagePayload);
 
         // 2) POST to set base to max
         await updateState({ step: 2, message: 'Step 2: Setting base to max via API...' });
@@ -1253,8 +1261,7 @@ async function proceedToAirbnbWorkflow() {
     await sendMessageToTab(originalTabId, { type: 'EXPORT_PRICE_TIPS_CSV', priceData });
     await persistLog('Workflow: CSV export completed');
     
-    // Step 24 & 25: Restore API and Zoom
-    await updateState({ step: 24, message: 'Step 24 & 25: Restoring base price and zoom...' });
+    // Step 24-25: Restore base price and zoom
     await restoreBaseAndZoom();
 
     // Step 26: Navigate back to PriceLabs
@@ -1266,22 +1273,29 @@ async function proceedToAirbnbWorkflow() {
 }
 
 async function restoreBaseAndZoom() {
-    // Step 24: Restore Original Base Price via API
+    await updateState({ step: 24, message: 'Step 24: Restoring original base price via API...' });
     try {
         const stored = await chrome.storage.local.get(['originalBase', 'originalListingId', 'originalPms']);
-        const { originalBase, originalListingId, originalPms } = stored;
-        if (typeof originalBase === 'number' && originalListingId && originalPms && apiTokenGlobal) {
-            await persistLog('Workflow: API restore starting', { originalListingId, originalPms, originalBase });
-            await callPriceLabsListingsApi(originalListingId, originalPms, apiTokenGlobal, Math.floor(originalBase));
-            await persistLog('Workflow: API restore completed');
+        const listingId = stored.originalListingId;
+        const pms = stored.originalPms;
+        const baseToRestore = normalizeBaseValue(stored.originalBase);
+        if (typeof baseToRestore === 'number' && listingId && pms && apiTokenGlobal) {
+            await persistLog('Workflow: API restore starting', { listingId, pms, base: baseToRestore });
+            await callPriceLabsListingsApi(listingId, pms, apiTokenGlobal, baseToRestore);
+            await persistLog('Workflow: API restore completed', { listingId, pms, base: baseToRestore });
         } else {
-            await persistLog('Workflow: API restore skipped - missing data');
+            await persistLog('Workflow: API restore skipped - missing data', {
+                hasBase: typeof baseToRestore === 'number',
+                listingId: !!listingId,
+                pms: !!pms,
+                hasToken: !!apiTokenGlobal
+            });
         }
     } catch (e) {
         await persistLog('Workflow: API restore error', { error: (e as Error)?.message });
     }
 
-    // Step 25: Restore Zoom
+    await updateState({ step: 25, message: 'Step 25: Restoring browser zoom...' });
     try {
         await zoomRestore(originalTabId);
         await persistLog('Workflow: Zoom and window state restored');
@@ -1296,12 +1310,12 @@ async function proceedToFinalSequence() {
     // Step 27: Save & Refresh
     await updateState({ step: 27, message: 'Step 27: Clicking Save & Refresh button...' });
     await sendMessageToTab(originalTabId, { type: 'CLICK_SAVE_REFRESH' });
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 2000)); // USER CHANGE: 0s -> 2s
 
     // Step 28: Sync Now
     await updateState({ step: 28, message: 'Step 28: Clicking Sync Now...' });
     await sendMessageToTab(originalTabId, { type: 'SYNC_NOW' });
-    await new Promise(resolve => setTimeout(resolve, 0)); // USER CHANGE: 1s -> 0s
+    await new Promise(resolve => setTimeout(resolve, 2000)); // USER CHANGE: 0s -> 2s
 
     // Step 29: Edit
     await updateState({ step: 29, message: 'Step 29: Clicking Edit...' });
@@ -1471,6 +1485,19 @@ async function callPriceLabsListingsApi(listingId: string, pms: string, apiToken
 		console.log('✅ API: update accepted for listings:', json.listings.map((l: any) => ({ id: l.id, pms: l.pms, base: l.base })));
 		await persistLog('API: POST success', { listings: json.listings.map((l: any) => ({ id: l.id, pms: l.pms, base: l.base })) });
 	}
+}
+
+function normalizeBaseValue(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = parseFloat(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    return undefined;
 }
 
 async function getListingViaApi(listingId: string, apiToken: string): Promise<{ id: string; base?: number; min?: number; max?: number } | null> {

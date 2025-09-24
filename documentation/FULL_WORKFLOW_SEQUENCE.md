@@ -58,9 +58,9 @@ Part 3 Airbnb Price Tips
 Part 4 PriceLabs Final Sequence
 
 27. Click "Save & Refresh"
-    Wait Time 0 sec
+    Wait Time 2 sec
 28. Click "Sync Now"
-    Wait Time 0 sec
+    Wait Time 2 sec
 29. Click "Edit"
     Wait Time 0 sec
 30. Click "Edit Profile" (Main Page)
@@ -69,3 +69,9 @@ Part 4 PriceLabs Final Sequence
     Wait Time 0 sec
 
 END Workflow Complete
+---
+
+### Troubleshooting Notes
+- Step 24 now logs whether the original base price was restored; check the "API restore" entries in persistent logs if the base is not reset.
+- The stored base price is normalized before saving and before restoring. If the API returns a non-numeric value, the workflow clears the cached base and logs the missing data to help diagnose the issue.
+- Steps 27 and 28 require a 2-second pause after each click to let the PriceLabs UI finish processing before continuing.
