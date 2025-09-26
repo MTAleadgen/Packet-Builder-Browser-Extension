@@ -1114,8 +1114,28 @@ async function startWorkflowWithPair(priceLabsUrl: string, airbnbUrl?: string) {
         // 2) Navigate to PriceLabs AFTER the API call
         await updateState({ step: 3, message: 'Step 3: Navigating to PriceLabs URL...' });
         console.log('🌐 Navigating to PriceLabs URL:', priceLabsUrl);
-        await chrome.tabs.update(originalTabId, { url: priceLabsUrl });
-        await new Promise(resolve => setTimeout(resolve, 4000)); // USER CHANGE: 2s -> 4s
+        await persistLog('🌐 Navigating to PriceLabs URL', { priceLabsUrl });
+
+        try {
+            await chrome.tabs.update(originalTabId, { url: priceLabsUrl, active: true });
+        } catch (navError) {
+            console.error('❌ Navigation to PriceLabs failed:', navError);
+            await persistLog('❌ Navigation to PriceLabs failed', { error: (navError as Error)?.message });
+            throw navError;
+        }
+
+        await persistLog('⏳ Waiting for PriceLabs tab to load');
+        await waitForTabLoad(originalTabId);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        try {
+            const tabAfterNav = await chrome.tabs.get(originalTabId);
+            await persistLog('🧭 Navigation check', { currentUrl: tabAfterNav?.url, expectedUrl: priceLabsUrl });
+            console.log('🧭 Navigation check:', { currentUrl: tabAfterNav?.url, expectedUrl: priceLabsUrl });
+        } catch (tabLookupError) {
+            console.warn('⚠️ Unable to read tab after navigation:', tabLookupError);
+            await persistLog('⚠️ Unable to read tab after navigation', { error: (tabLookupError as Error)?.message });
+        }
 
         // Continue with the normal workflow
         await injectScript(originalTabId);
@@ -1223,11 +1243,44 @@ async function proceedAfterInitialSteps() {
     await updateState({ step: 17, message: 'Step 17: Downloading as PDF...' });
     await sendMessageToTab(originalTabId, { type: 'MARKET_RESEARCH_STEP_6_DOWNLOAD_PDF' });
 
-    // Step 18: Wait for PDF download
-    await updateState({ step: 18, message: 'Step 18: Waiting for PDF download to start...' });
-    await new Promise(resolve => setTimeout(resolve, 120000)); // USER CHANGE: 30s -> 25s
+    console.log('🔍 DEBUG: About to start waitForDownloadCompletion');
+    await persistLog('🔍 DEBUG: About to start waitForDownloadCompletion');
+    
+    // Start download listener in parallel so we don't block state progression
+    void waitForDownloadCompletion()
+        .then(() => {
+            console.log('🔍 DEBUG: waitForDownloadCompletion completed successfully');
+            return persistLog('✅ PDF download completed successfully.');
+        })
+        .catch(error => {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            console.error('❌ PDF download failed:', errorMessage);
+            console.log('🔍 DEBUG: waitForDownloadCompletion failed, continuing anyway');
+            return persistLog(`❌ PDF download failed: ${errorMessage}`);
+        });
 
-    // --- End of Part 2, now proceed to Airbnb ---
+    const totalSyncMs = 120000;
+    const intervalMs = 30000;
+    let remainingMs = totalSyncMs;
+
+    await updateState({ step: 18, message: `Step 18: Syncing with Airbnb (${remainingMs / 1000}s remaining)...` });
+    await persistLog('🔍 DEBUG: Step 18 sync wait started', { remainingMs });
+
+    while (remainingMs > 0) {
+        const waitMs = Math.min(intervalMs, remainingMs);
+        console.log('🔍 DEBUG: Step 18 sync wait tick', { remainingMs, waitMs });
+        await persistLog('🔍 DEBUG: Step 18 sync wait tick', { remainingMs, waitMs });
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+        remainingMs -= waitMs;
+        if (remainingMs > 0) {
+            await updateState({ message: `Step 18: Syncing with Airbnb (${remainingMs / 1000}s remaining)...` });
+        }
+    }
+
+    await updateState({ message: 'Step 18: Syncing with Airbnb (0s remaining)...' });
+    console.log('🔍 DEBUG: Step 18 sync wait completed');
+    await persistLog('✅ Step 18 sync wait completed');
+
     await proceedToAirbnbWorkflow();
 }
 
@@ -1539,5 +1592,84 @@ async function resetWorkflowState() {
         totalSteps: 32
     };
     await chrome.storage.local.set({ state });
-    await updatePopup();
+}
+
+// Function to wait for a specified duration with progress updates
+async function waitWithProgress(duration: number, interval: number, messagePrefix: string) {
+    console.log('🔍 DEBUG: waitWithProgress started', { duration, interval, messagePrefix });
+    await persistLog('🔍 DEBUG: waitWithProgress started', { duration, interval, messagePrefix });
+    
+    let remaining = duration;
+    while (remaining > 0) {
+        const waitTime = Math.min(remaining, interval);
+        const message = `${messagePrefix} (${Math.round(remaining / 1000)}s remaining)...`;
+        console.log('🔍 DEBUG: waitWithProgress iteration', { remaining, waitTime, message });
+        
+        try {
+            await updateState({ message });
+            console.log('🔍 DEBUG: updateState completed');
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            console.log('🔍 DEBUG: setTimeout completed');
+            remaining -= waitTime;
+        } catch (error) {
+            console.error('🔍 DEBUG: waitWithProgress error:', error);
+            await persistLog('🔍 DEBUG: waitWithProgress error', { error: (error as any)?.message });
+            break;
+        }
+    }
+    
+    console.log('🔍 DEBUG: waitWithProgress completed');
+    await persistLog('🔍 DEBUG: waitWithProgress completed');
+}
+
+// Function to wait for a download to complete
+async function waitForDownloadCompletion(timeout: number = 60000): Promise<void> {
+    console.log('🔍 DEBUG: waitForDownloadCompletion started with timeout:', timeout);
+    await persistLog('🔍 DEBUG: waitForDownloadCompletion started', { timeout });
+    
+    return new Promise((resolve) => {
+        let downloadDetected = false;
+        
+        const onDownloadCreated = (item: chrome.downloads.DownloadItem) => {
+            console.log('🔍 DEBUG: Download created:', { id: item.id, mime: item.mime, filename: item.filename });
+            persistLog('🔍 DEBUG: Download created', { mime: item.mime, filename: item.filename });
+
+            // Make MIME type check more lenient
+            if (item.mime.includes('pdf') || item.filename.endsWith('.pdf')) {
+                downloadDetected = true;
+                console.log('🔍 DEBUG: PDF download detected, setting up change listener');
+                persistLog('🔍 DEBUG: PDF download detected, setting up change listener');
+                
+                const onDownloadChanged = (delta: chrome.downloads.DownloadDelta) => {
+                    console.log('🔍 DEBUG: Download changed:', { id: delta.id, state: delta.state });
+                    if (delta.id === item.id && delta.state && delta.state.current === 'complete') {
+                        console.log('🔍 DEBUG: PDF download completed, resolving');
+                        chrome.downloads.onChanged.removeListener(onDownloadChanged);
+                        chrome.downloads.onCreated.removeListener(onDownloadCreated);
+                        clearTimeout(timer);
+                        resolve();
+                    }
+                };
+
+                chrome.downloads.onChanged.addListener(onDownloadChanged);
+            } else {
+                console.log('🔍 DEBUG: Non-PDF download, ignoring');
+            }
+        };
+
+        chrome.downloads.onCreated.addListener(onDownloadCreated);
+
+        const timer = setTimeout(() => {
+            console.log('🔍 DEBUG: waitForDownloadCompletion timed out, downloadDetected:', downloadDetected);
+            persistLog('🔍 DEBUG: waitForDownloadCompletion timed out', { downloadDetected });
+            chrome.downloads.onCreated.removeListener(onDownloadCreated);
+            if (!downloadDetected) {
+                resolve();
+                return;
+            }
+
+            // If we saw a PDF download but completion never fired, resolve anyway
+            resolve();
+        }, timeout);
+    });
 }

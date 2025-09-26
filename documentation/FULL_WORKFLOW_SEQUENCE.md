@@ -38,7 +38,7 @@ Part 2 PriceLabs First Sequence
 15. Click "Show Dashboard"
 16. Wait for Dashboard to Load
 17. Click "Download as PDF"
-18. Wait for PDF Download
+18. Wait for PriceLabs Sync (Post-PDF)
     Wait Time 120 sec
 
 Part 3 Airbnb Price Tips

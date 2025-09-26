@@ -1997,282 +1997,227 @@ const extractPriceTipsData = async (): Promise<Array<{
     month: string;
     year: string;
 }>> => {
-    await saveLog('🔍 AIRBNB: Starting comprehensive price tips extraction...');
+    await saveLog('🔍 AIRBNB: Starting price tips extraction...');
 
-    const priceTipsData: Array<{
+    const tipElements = Array.from(document.querySelectorAll('div[aria-label^="price tip"]')) as HTMLElement[];
+    await saveLog(`📊 AIRBNB: Found ${tipElements.length} price tip elements`);
+
+    const tipsByDate = new Map<string, {
         date: string;
         currentPrice: number | null;
         suggestedPrice: number | null;
         dayOfWeek: string;
         month: string;
         year: string;
-    }> = [];
+    }>();
 
-    try {
-        // STEP 1: Scroll through calendar to load all months
-        await saveLog('📜 AIRBNB: Scrolling through calendar to load all months...');
-        await scrollCalendarToLoadAllMonths();
-
-        // STEP 2: Look for calendar day elements that contain pricing information
-        const calendarDays = Array.from(document.querySelectorAll([
-            '[data-testid*="calendar-day"]',
-            '[data-testid*="day"]',
-            '.calendar-day',
-            '.day',
-            '[class*="calendar"] [class*="day"]',
-            '[role="gridcell"]',
-            '[aria-label*="calendar"]',
-            // Generic selectors for calendar elements
-            'div[aria-label*="calendar"]',
-            'button[aria-label*="calendar"]',
-            'div[aria-label*="date"]',
-            'button[aria-label*="date"]'
-        ].join(', ')));
-
-        await saveLog(`📅 Found ${calendarDays.length} potential calendar day elements`);
-
-        // Debug: Log content of first few calendar elements
-        for (let i = 0; i < Math.min(5, calendarDays.length); i++) {
-            const element = calendarDays[i];
-            await saveLog(`🔍 Calendar Element ${i}: ${element.textContent?.substring(0, 200)}`);
-            await saveLog(`🔍 Element attributes: ${Array.from(element.attributes).map(attr => `${attr.name}=${attr.value}`).join(', ')}`);
-        }
-
-        for (const dayElement of calendarDays) {
-            try {
-                const dayData = await extractSingleDayPriceData(dayElement);
-                if (dayData && (dayData.currentPrice || dayData.suggestedPrice)) {
-                    priceTipsData.push(dayData);
-                    await saveLog(`📊 Extracted: ${dayData.date} - Current: $${dayData.currentPrice}, Suggested: $${dayData.suggestedPrice}`);
-                }
-            } catch (dayError) {
-                // Skip problematic days but continue with others
-                console.log('⚠️ Skipped problematic calendar day:', dayError.message);
-            }
-        }
-
-        // Alternative: Look for price tip overlays or tooltips (using only valid CSS selectors)
-        const priceTipElements = Array.from(document.querySelectorAll([
-            '[data-testid*="price-tip"]',
-            '[data-testid*="price_tip"]',
-            '[class*="price-tip"]',
-            '[class*="price_tip"]',
-            '[aria-label*="price"]',
-            'div[class*="tooltip"]',
-            'div[class*="overlay"]',
-            '[role="tooltip"]',
-            '[role="dialog"]',
-            '.tooltip',
-            '.overlay'
-        ].join(', ')));
-
-        await saveLog(`💡 Found ${priceTipElements.length} price tip elements`);
-
-        // Debug: Log content of first few price tip elements
-        for (let i = 0; i < Math.min(5, priceTipElements.length); i++) {
-            const element = priceTipElements[i];
-            await saveLog(`🔍 Price Tip Element ${i}: ${element.textContent?.substring(0, 200)}`);
-            await saveLog(`🔍 Price Tip attributes: ${Array.from(element.attributes).map(attr => `${attr.name}=${attr.value}`).join(', ')}`);
-        }
-
-        for (const tipElement of priceTipElements) {
-            try {
-                const tipData = await extractPriceTipOverlayData(tipElement);
-                if (tipData && !priceTipsData.find(d => d.date === tipData.date)) {
-                    priceTipsData.push(tipData);
-                    await saveLog(`📊 Overlay: ${tipData.date} - Current: $${tipData.currentPrice}, Suggested: $${tipData.suggestedPrice}`);
-                }
-            } catch (tipError) {
-                console.log('⚠️ Skipped problematic price tip:', tipError.message);
-            }
-        }
-
-    } catch (error) {
-        await saveLog(`❌ Error extracting price tips: ${error.message}`);
-
-        // Fallback: Try simpler price extraction
-        await saveLog('🔄 Attempting fallback price extraction...');
-
+    for (const tipElement of tipElements) {
         try {
-            const allTextElements = Array.from(document.querySelectorAll('*')).filter(el => {
-                const text = el.textContent || '';
-                return text.includes('$') && text.match(/\$\d+/);
+            const suggestedPrice = parsePriceValue(tipElement.textContent);
+            if (suggestedPrice === null) {
+                await saveLog('⚠️ AIRBNB: Price tip element without numeric value, skipping', {
+                    preview: tipElement.textContent?.trim()?.slice(0, 80) || ''
+                });
+                continue;
+            }
+
+            const rowElement = findTipRowContainer(tipElement);
+            if (!rowElement) {
+                await saveLog('⚠️ AIRBNB: Could not locate row container for price tip element');
+                continue;
+            }
+
+            const tipDateIso = resolveTipDate(rowElement);
+            if (!tipDateIso) {
+                await saveLog('⚠️ AIRBNB: Unable to determine date for price tip row', {
+                    preview: rowElement.textContent?.trim()?.slice(0, 120) || ''
+                });
+                continue;
+            }
+
+            const currentPrice = resolveCurrentPrice(rowElement, suggestedPrice);
+
+            const dateObj = new Date(tipDateIso);
+            const entry = {
+                date: tipDateIso,
+                currentPrice,
+                suggestedPrice,
+                dayOfWeek: dateObj.toLocaleDateString('en-US', { weekday: 'long' }),
+                month: dateObj.toLocaleDateString('en-US', { month: 'long' }),
+                year: dateObj.getFullYear().toString()
+            };
+
+            tipsByDate.set(tipDateIso, entry);
+        } catch (tipError) {
+            await saveLog('⚠️ AIRBNB: Failed to parse individual price tip entry', {
+                error: (tipError as Error)?.message
             });
-
-            await saveLog(`💡 Fallback found ${allTextElements.length} elements with price data`);
-
-            for (const element of allTextElements.slice(0, 20)) { // Limit to first 20
-                const text = element.textContent || '';
-                await saveLog(`📊 Price element: ${text.substring(0, 100)}`);
-            }
-
-            // If we found any price data, create a basic CSV
-            if (allTextElements.length > 0) {
-                const fallbackData = [{
-                    date: new Date().toISOString().split('T')[0],
-                    currentPrice: null,
-                    suggestedPrice: null,
-                    dayOfWeek: new Date().toLocaleDateString('en-US', { weekday: 'long' }),
-                    month: new Date().toLocaleDateString('en-US', { month: 'long' }),
-                    year: new Date().getFullYear().toString()
-                }];
-
-                await saveLog('✅ Fallback extraction completed');
-                return fallbackData;
-            }
-
-        } catch (fallbackError) {
-            await saveLog(`❌ Fallback extraction also failed: ${fallbackError.message}`);
         }
-
-        throw error;
     }
 
-    await saveLog(`✅ Completed extraction: ${priceTipsData.length} entries found`);
-    return priceTipsData;
+    const results = Array.from(tipsByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+    await saveLog(`✅ AIRBNB: Completed extraction with ${results.length} entries`);
+    return results;
 };
 
-const extractSingleDayPriceData = async (dayElement: Element): Promise<{
-    date: string;
-    currentPrice: number | null;
-    suggestedPrice: number | null;
-    dayOfWeek: string;
-    month: string;
-    year: string;
-} | null> => {
-    // Extract date information
-    const dateText = dayElement.getAttribute('aria-label') ||
-                    dayElement.getAttribute('data-date') ||
-                    dayElement.getAttribute('data-testid') ||
-                    dayElement.textContent?.split('\n')[0] ||
-                    '';
+const findTipRowContainer = (tipElement: HTMLElement): HTMLElement | null => {
+    const dayPattern = /(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)/i;
 
-    // Extract prices from the element and all its children
-    const allText = [
-        dayElement.textContent || '',
-        ...Array.from(dayElement.querySelectorAll('*')).map(el => el.textContent || '')
-    ].join(' ');
+    let node: HTMLElement | null = tipElement;
+    while (node && node !== document.body) {
+        const text = node.textContent || '';
+        if (node.querySelector('[data-date]')) {
+            return node;
+        }
+        if (dayPattern.test(text)) {
+            return node;
+        }
+        node = node.parentElement;
+    }
+    return tipElement.parentElement;
+};
 
-    const priceMatches = allText.match(/\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g);
-
-    let currentPrice: number | null = null;
-    let suggestedPrice: number | null = null;
-
-    if (priceMatches && priceMatches.length >= 1) {
-        // First price is typically current price
-        currentPrice = parseFloat(priceMatches[0].replace(/[$,]/g, ''));
-
-        // Second price is typically suggested price
-        if (priceMatches.length >= 2) {
-            suggestedPrice = parseFloat(priceMatches[1].replace(/[$,]/g, ''));
+const resolveTipDate = (container: HTMLElement): string | null => {
+    const dateNode = container.querySelector('[data-date]');
+    if (dateNode) {
+        const iso = normalizeAirbnbDate((dateNode as HTMLElement).dataset.date || dateNode.getAttribute('data-date') || '');
+        if (iso) {
+            return iso;
         }
     }
 
-    // Also look for prices without dollar signs (sometimes Airbnb shows just numbers)
-    const numberMatches = allText.match(/\b(\d+(?:,\d{3})*(?:\.\d{2})?)\b/g);
-    if (!priceMatches && numberMatches && numberMatches.length >= 1) {
-        currentPrice = parseFloat(numberMatches[0].replace(/,/g, ''));
-        if (numberMatches.length >= 2) {
-            suggestedPrice = parseFloat(numberMatches[1].replace(/,/g, ''));
+    const text = container.textContent || '';
+
+    const isoMatch = text.match(/(20\d{2}-\d{2}-\d{2})/);
+    if (isoMatch) {
+        return normalizeAirbnbDate(isoMatch[1]);
+    }
+
+    const monthRegex = /(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)/i;
+    const monthMatch = text.match(monthRegex);
+
+    if (!monthMatch) {
+        return null;
+    }
+
+    const monthName = monthMatch[1];
+    const monthIndex = monthNameToIndex(monthName);
+    if (monthIndex === null) {
+        return null;
+    }
+
+    const beforeMonth = text.slice(0, monthMatch.index || 0);
+    const dayBeforeMatch = beforeMonth.match(/(\d{1,2})\s*$/);
+    let dayNumber: number | null = null;
+
+    if (dayBeforeMatch) {
+        dayNumber = parseInt(dayBeforeMatch[1], 10);
+    } else {
+        const afterMonth = text.slice((monthMatch.index || 0) + monthMatch[0].length);
+        const dayAfterMatch = afterMonth.match(/^(\d{1,2})/);
+        if (dayAfterMatch) {
+            dayNumber = parseInt(dayAfterMatch[1], 10);
         }
     }
 
-    // Extract date components
-    const date = new Date(dateText);
-    const isValidDate = !isNaN(date.getTime());
+    if (dayNumber === null) {
+        return null;
+    }
 
-    if (isValidDate) {
-        return {
-            date: date.toISOString().split('T')[0],
-            currentPrice,
-            suggestedPrice,
-            dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'long' }),
-            month: date.toLocaleDateString('en-US', { month: 'long' }),
-            year: date.getFullYear().toString()
-        };
+    const yearMatch = text.match(/(20\d{2})/);
+    const inferredYear = yearMatch ? parseInt(yearMatch[1], 10) : inferYearFromMonth(monthIndex);
+
+    return `${inferredYear}-${padNumber(monthIndex)}-${padNumber(dayNumber)}`;
+};
+
+const resolveCurrentPrice = (container: HTMLElement, suggestedPrice: number): number | null => {
+    const priceMatches = Array.from(new Set((container.textContent || '').match(/\$\s*([0-9]+(?:\.[0-9]{2})?)/g) || []))
+        .map(match => parsePriceValue(match))
+        .filter((value): value is number => value !== null);
+
+    const candidate = priceMatches.find(price => price !== suggestedPrice);
+    if (typeof candidate === 'number') {
+        return candidate;
+    }
+
+    const fallback = container.querySelector('div[aria-label*="current" i], div[aria-label*="existing" i]');
+    if (fallback) {
+        const parsedFallback = parsePriceValue(fallback.textContent);
+        if (parsedFallback !== null) {
+            return parsedFallback;
+        }
     }
 
     return null;
 };
 
-const extractPriceTipOverlayData = async (tipElement: Element): Promise<{
-    date: string;
-    currentPrice: number | null;
-    suggestedPrice: number | null;
-    dayOfWeek: string;
-    month: string;
-    year: string;
-} | null> => {
-    // Extract data from price tip overlays/tooltips with comprehensive search
+const parsePriceValue = (raw: string | null | undefined): number | null => {
+    if (!raw) {
+        return null;
+    }
+    const match = raw.match(/([0-9]+(?:\.[0-9]{2})?)/);
+    if (!match) {
+        return null;
+    }
+    const value = parseFloat(match[1].replace(/,/g, ''));
+    return Number.isFinite(value) ? value : null;
+};
 
-    // Look for price data in the element and all its children
-    const allText = [
-        tipElement.textContent || '',
-        ...Array.from(tipElement.querySelectorAll('*')).map(el => el.textContent || '')
-    ].join(' ');
+const monthNameToIndex = (name: string): number | null => {
+    const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+    const lower = name.toLowerCase();
+    const longIndex = months.findIndex(month => lower.startsWith(month));
+    if (longIndex !== -1) {
+        return longIndex + 1;
+    }
+    const shortMonths = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const shortIndex = shortMonths.findIndex(month => lower.startsWith(month));
+    return shortIndex !== -1 ? shortIndex + 1 : null;
+};
 
-    const priceMatches = allText.match(/\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g);
+const inferYearFromMonth = (monthIndex: number): number => {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    let year = now.getFullYear();
 
-    let currentPrice: number | null = null;
-    let suggestedPrice: number | null = null;
+    if (monthIndex < currentMonth - 6) {
+        year += 1;
+    } else if (monthIndex > currentMonth + 6) {
+        year -= 1;
+    }
 
-    if (priceMatches && priceMatches.length >= 1) {
-        currentPrice = parseFloat(priceMatches[0].replace(/[$,]/g, ''));
-        if (priceMatches.length >= 2) {
-            suggestedPrice = parseFloat(priceMatches[1].replace(/[$,]/g, ''));
+    return year;
+};
+
+const padNumber = (value: number): string => value.toString().padStart(2, '0');
+
+const normalizeAirbnbDate = (raw: string): string | null => {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) {
+        return null;
+    }
+
+    const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) {
+        return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+    }
+
+    const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (slashMatch) {
+        const [_, month, day, year] = slashMatch;
+        return `${year}-${padNumber(parseInt(month, 10))}-${padNumber(parseInt(day, 10))}`;
+    }
+
+    const wordsMatch = trimmed.match(/^(\w+)\s(\d{1,2}),?\s(\d{4})$/);
+    if (wordsMatch) {
+        const [_, monthName, day, year] = wordsMatch;
+        const monthIndex = monthNameToIndex(monthName);
+        if (monthIndex) {
+            return `${year}-${padNumber(monthIndex)}-${padNumber(parseInt(day, 10))}`;
         }
     }
 
-    // Also look for prices without dollar signs
-    const numberMatches = allText.match(/\b(\d+(?:,\d{3})*(?:\.\d{2})?)\b/g);
-    if (!priceMatches && numberMatches && numberMatches.length >= 1) {
-        currentPrice = parseFloat(numberMatches[0].replace(/,/g, ''));
-        if (numberMatches.length >= 2) {
-            suggestedPrice = parseFloat(numberMatches[1].replace(/,/g, ''));
-        }
-    }
-
-    if (!currentPrice && !suggestedPrice) {
-        return null; // No price data found
-    }
-
-    // Find associated date element with more comprehensive search
-    const dateElement = tipElement.closest('[data-date]') ||
-                       tipElement.closest('[aria-label*="date"]') ||
-                       tipElement.closest('[data-testid*="day"]') ||
-                       tipElement.closest('[class*="date"]') ||
-                       tipElement.closest('[aria-label*="calendar"]');
-
-    let dateText = dateElement?.getAttribute('data-date') ||
-                   dateElement?.getAttribute('aria-label') ||
-                   dateElement?.textContent?.split('\n')[0] ||
-                   '';
-
-    // If no date found, try to extract from the overlay itself
-    if (!dateText) {
-        const dateMatch = allText.match(/(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2}|\w+ \d{1,2},? \d{4})/);
-        if (dateMatch) {
-            dateText = dateMatch[0];
-        }
-    }
-
-    if (!dateText) {
-        // Fallback: use current date if no date found
-        const now = new Date();
-        dateText = now.toISOString().split('T')[0];
-    }
-
-    const date = new Date(dateText);
-    const isValidDate = !isNaN(date.getTime());
-
-    return {
-        date: isValidDate ? date.toISOString().split('T')[0] : dateText,
-        currentPrice,
-        suggestedPrice,
-        dayOfWeek: isValidDate ? date.toLocaleDateString('en-US', { weekday: 'long' }) : '',
-        month: isValidDate ? date.toLocaleDateString('en-US', { month: 'long' }) : '',
-        year: isValidDate ? date.getFullYear().toString() : ''
-    };
+    return null;
 };
 
 const generatePriceTipsCSV = async (priceData: Array<{
@@ -2295,8 +2240,8 @@ const generatePriceTipsCSV = async (priceData: Array<{
                 row.dayOfWeek,
                 row.month,
                 row.year,
-                row.currentPrice ? `$${row.currentPrice}` : '',
-                row.suggestedPrice ? `$${row.suggestedPrice}` : ''
+                row.currentPrice !== null ? `$${row.currentPrice}` : '',
+                row.suggestedPrice !== null ? `$${row.suggestedPrice}` : ''
             ].join(',');
         })
     ];
@@ -2453,7 +2398,7 @@ chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sen
                     return { type: 'SUCCESS' };
                 }
                 case 'OCCUPANCY_STEP_4_DOWNLOAD': {
-                    await occupancyStep4Download();
+                    await occupancyStep6Download();
                     return { type: 'SUCCESS' };
                 }
                 case 'OCCUPANCY_STEP_5_CLOSE_POPUP': {

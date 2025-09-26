@@ -56,7 +56,7 @@ The workflow is a linear sequence of steps managed by `background.ts`. The offic
 14. **Click "Show Dashboard":** Clicks the button to load the market dashboard.
 15. **Wait for Dashboard:** A **10-second wait** is hardcoded to allow the dashboard graphs and data to fully render.
 16. **Click "Download as PDF":** Clicks the button to generate and download the market dashboard as a PDF.
-17. **Wait for PDF Download:** A **25-second wait** allows the PDF to be generated and the download to begin.
+17. **Wait for PDF Download:** A **240-second wait** allows the PDF to be generated and the download to begin.
 18. **Navigate to Airbnb URL:** Navigates the tab to the paired Airbnb multicalendar URL. A **3-second wait** follows.
 19. **Click "Price Tips":** Clicks the "Price Tips" button on the Airbnb calendar.
 20. **Zoom Out Browser:** Zooms the browser out to 25% to ensure all price tips are visible on the screen for data extraction.
