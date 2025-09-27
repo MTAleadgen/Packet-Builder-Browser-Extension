@@ -60,11 +60,12 @@ The workflow is a linear sequence of steps managed by `background.ts`. The offic
 18. **Navigate to Airbnb URL:** Navigates the tab to the paired Airbnb multicalendar URL. A **3-second wait** follows.
 19. **Click "Price Tips":** Clicks the "Price Tips" button on the Airbnb calendar.
 20. **Zoom Out Browser:** Zooms the browser out to 25% to ensure all price tips are visible on the screen for data extraction.
-21. **Extract Price Tips Data:** The content script scrapes the price tip data from the page.
-22. **Export Data to CSV:** The extracted price tips are compiled into a CSV and downloaded.
-23. **Restore Original Base Price (API):** Makes a `POST /v1/listings` call to restore the original base price that was saved in Step 1.
-24. **Restore Browser Zoom:** Restores the browser zoom to its original level.
-25. **Navigate Back to PriceLabs:** Navigates the tab back to the original PriceLabs URL. A **3-second wait** follows.
+21. **Wait (Step 18 Sync):** The workflow waits 120 seconds (configurable via `totalSyncMs` in `background.ts`) to allow PriceLabs updates to propagate before scraping Airbnb.
+22. **Extract Price Tips Data:** The content script reads the price tips from the Airbnb sidebar (`div[aria-label^="price tip"]`), normalizes the date from the row container, and captures both current and suggested prices.
+23. **Export Data to CSV:** The extracted data is written to the legacy CSV structure (`Date, Day of Week, Month, Year, Current Price, Suggested Price`).
+24. **Restore Original Base Price (API):** Makes a `POST /v1/listings` call to restore the original base price that was saved in Step 1.
+25. **Restore Browser Zoom:** Restores the browser zoom to its original level.
+26. **Navigate Back to PriceLabs:** Navigates the tab back to the original PriceLabs URL. A **3-second wait** follows.
 
 ### Part 4: PriceLabs Final Sequence
 This sequence of rapid clicks finalizes the process. All steps have a **0-second wait**.

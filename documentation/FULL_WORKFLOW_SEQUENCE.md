@@ -40,6 +40,8 @@ Part 2 PriceLabs First Sequence
 17. Click "Download as PDF"
 18. Wait for PriceLabs Sync (Post-PDF)
     Wait Time 120 sec
+    - Configurable via `totalSyncMs` in `background.ts` (default 120000 ms).
+    - Adjust this single constant if you need a different delay (e.g., 100 seconds = 100000 ms).
 
 Part 3 Airbnb Price Tips
 
@@ -49,7 +51,10 @@ Part 3 Airbnb Price Tips
 21. Zoom Out Browser
     Wait Time 0 sec
 22. Extract Price Tips Data
+    - Scrapes Airbnb sidebar elements with `aria-label^="price tip"`.
+    - Normalizes date text (e.g., "Sunday 28 Sep") to ISO format for the CSV.
 23. Export Data to CSV
+    - Outputs the legacy `Date, Day of Week, Month, Year, Current Price, Suggested Price` columns.
 24. Restore Original Base Price via API
 25. Restore Browser Zoom
 26. Navigate Back to PriceLabs
